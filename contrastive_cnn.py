@@ -38,27 +38,6 @@ def get_samples(dataset, num_negative_samples, same_env_percent):
 
     return anchor_observation, positive_observation, negative_observation
 
-
-def test_model(data, agent, num_tests):
-    pos_sims = []
-    neg_sims = []
-
-    for x in range(0, num_tests):
-        original, positive, negatives = get_samples(data, num_negative_samples=10, same_env_percent=0.5)
-        batch_original = agent.get_latent_encoding(torch.tensor(original).unsqueeze(0).to(device))
-        batch_positive = agent.get_latent_encoding(torch.tensor(positive).unsqueeze(0).to(device))
-        batch_negatives = agent.get_latent_encoding(torch.tensor(negatives).to(device))
-
-        positive_pair = torch.cosine_similarity(batch_original, batch_positive, dim=1)
-        negative_pair = torch.cosine_similarity(batch_original, batch_negatives[0], dim=1)
-
-        pos_sims.append(positive_pair.cpu().detach().numpy())
-        neg_sims.append(negative_pair.cpu().detach().numpy())
-
-    print(f"Positive similarities: {np.mean(pos_sims)}")
-    print(f"Negative similarities: {np.mean(neg_sims)}")
-
-
 def better_plot(observations, losses, plot_name, pairwise=False):
     for n, obs in enumerate(observations):
         observations[n] = np.moveaxis(obs, 0, -1)
@@ -255,7 +234,6 @@ def train_model(agent, optimizer, loss_fn, batch_size, num_negative, numpy_train
         batched_negative_obs = numpy_train_dataset[negative_envs, negative_idx]
         batched_negative_obs = np.reshape(batched_negative_obs, (batch_size * num_negative, 3, 84, 84))
 
-        start_forward = time.perf_counter()
         # Get the latent encodings
         batch_anchor_encodings = agent.get_latent_encoding(torch.from_numpy(batched_anchor_obs).to(device))
         batch_positive_encodings = agent.get_latent_encoding(torch.from_numpy(batched_positive_obs).to(device))
@@ -264,7 +242,6 @@ def train_model(agent, optimizer, loss_fn, batch_size, num_negative, numpy_train
         # Reshape from (batch_size * num_negative, 512) to (batch_size, num_negative, 512)
         batched_negative_obs = torch.reshape(batch_negative_encodings, (batch_size, num_negative, 512))
 
-        start_backwards = time.perf_counter()
         # Update the model
         loss = loss_fn(batch_anchor_encodings, batch_positive_encodings, batched_negative_obs)
 
@@ -272,13 +249,9 @@ def train_model(agent, optimizer, loss_fn, batch_size, num_negative, numpy_train
         loss.backward()
         optimizer.step()
 
-        end = time.perf_counter()
         # Add the loss for the current batch
         losses.append(loss.cpu().detach().numpy())
-        # print(loss)
-        # print(f"Batch {start_forward - start_batch:.3f}\t")
-        # print(f"Forward pass {start_backwards - start_forward:.3f}\t")
-        # print(f"Backward {end - start_backwards:.3f}\t")
+
     return np.array(losses)
 
 
@@ -355,7 +328,7 @@ if __name__ == "__main__":
     agent = PPONetwork(env).to(device)
 
     ppo_agent_ckpt = "contrastive_cnn.ckpt"
-    # agent.load_checkpoint(ppo_agent_ckpt)
+    agent.load_checkpoint(ppo_agent_ckpt)
 
     # Setup environments
     all_env_configs = [
