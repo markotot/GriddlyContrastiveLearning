@@ -355,7 +355,7 @@ if __name__ == "__main__":
     # Hyperparams
     num_epochs = 100
     batch_size = 128
-    num_negative = 128
+    num_negative = 64
     encoding_size = 512
 
     info_nce = InfoNCE(negative_mode='paired')

@@ -63,10 +63,6 @@ def PCA_visualization_by_background(agent, full_dataset, num_datapoints, plot_ti
 
 
 if __name__ == "__main__":
-    np.random.seed(0)
-    torch.manual_seed(0)
-    torch.cuda.manual_seed(0)
-    torch.backends.cudnn.deterministic = True
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     # ppo_agent_ckpt = "ppo_ood_red_white.ckpt"
