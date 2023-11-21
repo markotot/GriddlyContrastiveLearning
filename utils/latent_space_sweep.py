@@ -2,8 +2,10 @@ from matplotlib import pyplot as plt
 
 from core.environment import make_env
 from core.network import PPONetwork
-import torch
 import numpy as np
+
+import torch
+import torch.nn.functional as F
 
 
 def get_agent_actions(num_total_actions, env_config, ckpt_path, label_actions=None):
@@ -90,7 +92,9 @@ def check_if_action_sequence_is_same():
     num_diff = num_agent_actions - num_equal
 
     cosine_similarities = [np.dot(a, b)/(np.linalg.norm(a)*np.linalg.norm(b)) for a, b in zip(encodings_a, encodings_b)]
-
+    norm_distances = [np.linalg.norm(a-b) for a, b in zip(encodings_a, encodings_b)]
+    print(f"Mean cosine similarity: {np.mean(cosine_similarities):.5f}")
+    print(f"Mean norm distance: {np.mean(norm_distances):.5f}")
     print(f"Total actions: {num_agent_actions}")
     print(f"Same actions: {num_equal} ({num_equal/num_agent_actions*100:.2f}%)")
     print(f"Diff actions: {num_diff} ({num_diff/num_agent_actions*100:.2f}%)")
@@ -105,32 +109,50 @@ def batch_euclidean_distance(anchor_batch, positive_batch, negative_batch):
     anchor_broadcasted = np.tile(anchor_batch[:, np.newaxis, :], (1, negative_batch.shape[1], 1))
     negative_distances = -1 * np.linalg.norm(negative_batch - anchor_broadcasted, axis=2)
 
-    logits = np.concatenate((np.expand_dims(positive_distances, axis=1), negative_distances), axis=1)
-    labels = np.zeros(logits.shape[0])
-
+    # softmax_fn = torch.nn.Softmax(dim=1)
     loss = torch.nn.CrossEntropyLoss()
-    output = loss(torch.from_numpy(logits), torch.from_numpy(labels).long())
-    print(output)
+
+    logits = np.concatenate((np.expand_dims(positive_distances, axis=1), negative_distances), axis=1)
+    # logits = softmax_fn(torch.from_numpy(logits))
+    labels = torch.zeros(logits.shape[0], dtype=torch.long)
+
+    output = loss(torch.from_numpy(logits), labels)
+    return output
+
+def torch_batch_euclidean_distance(temperature, anchor_batch, positive_batch, negative_batch):
+
+    # Calculate the Euclidean distances
+    positive_distances = -torch.norm(anchor_batch - positive_batch, dim=1)
+
+    # Broadcast the vectors to have the same shape as the matrices
+    anchor_broadcasted = anchor_batch.unsqueeze(1).expand(-1, negative_batch.shape[1], -1)
+    negative_distances = -torch.norm(negative_batch - anchor_broadcasted, dim=2)
+
+    # Apply softmax along dimension 1
+    logits = torch.cat((positive_distances.unsqueeze(1), negative_distances), dim=1)
+
+    # Create labels tensor
+    labels = torch.zeros(logits.shape[0], dtype=torch.long)
+
+    # Calculate CrossEntropyLoss
+    output = F.cross_entropy(logits / temperature, labels)
 
     return output
 
-
 if __name__ == "__main__":
-    #check_if_action_sequence_is_same()
+    check_if_action_sequence_is_same()
 
-    enc_length = 2
-    batch_size = 3
-    num_negatives = 4
+    enc_length = 512
+    batch_size = 64
+    num_negatives = 128
 
-    anchor = np.random.rand(batch_size, enc_length)  # Replace this with your actual batch of vectors
-    positive = np.random.rand(batch_size, enc_length)  # Replace this with your actual batch of vectors
-    negative = np.random.rand(batch_size, num_negatives, enc_length)  # Replace this with your actual batch of matrices
+    anchor = torch.rand(batch_size, enc_length)
+    positive = torch.rand(batch_size, enc_length)
+    negative = torch.rand(batch_size, num_negatives, enc_length) * 10
 
-    # Testcase
-    # anchor = np.ones([batch_size, enc_length])
-    # positive = np.ones([batch_size, enc_length]) * 2
-    # negative = np.ones([batch_size, num_negatives, enc_length]) * 3
-    distances_batch = batch_euclidean_distance(anchor, positive, negative)
+
+    loss = torch_batch_euclidean_distance(0.5, anchor, positive, negative)
+    print(f"Loss: {loss}")
 
 
 

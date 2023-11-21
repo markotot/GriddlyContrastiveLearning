@@ -84,8 +84,8 @@ if __name__ == "__main__":
     ]
 
     total_steps = 4_000_000
-    load_ckpt_path = "contrastive_cnn_97.ckpt"
-    # load_ckpt_path = None
+    # load_ckpt_path = "contrastive_cnn.ckpt"
+    load_ckpt_path = None
     freeze_cnn = True
 
     if model == "ppo":

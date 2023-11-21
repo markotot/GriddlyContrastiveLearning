@@ -38,6 +38,7 @@ def get_samples(dataset, num_negative_samples, same_env_percent):
 
     return anchor_observation, positive_observation, negative_observation
 
+
 def better_plot(observations, losses, plot_name, pairwise=False):
     for n, obs in enumerate(observations):
         observations[n] = np.moveaxis(obs, 0, -1)
@@ -87,42 +88,39 @@ def plot_sample(original_obs, paired_obs, contrastive_loss, plot_name):
     plt.show()
 
 
-def test_same_background(agent, test_dataset, verbose_num, print_details, plot_name="Test"):
-    anchor_dataset = copy.deepcopy(test_dataset)
-    negative_dataset = copy.deepcopy(test_dataset)
+def test_same_background(agent, anchor_dataset, verbose_num, print_details, plot_name="Test"):
 
-    num_samples = len(list(anchor_dataset.values())[0])
+    test_dataset = copy.deepcopy(anchor_dataset)
+    num_samples = anchor_dataset.shape[1]
+
     idx = np.random.permutation(range(num_samples))
-    shuffled_negative_dataset = {key: negative_dataset[key][idx] for key in negative_dataset}
-
-    verbose_idx = np.random.permutation(range(num_samples))[:verbose_num]
+    test_dataset = test_dataset[:, idx]
 
     background_similarities = {}
-    for anchor_key in anchor_dataset.keys():
+    for idx in range(anchor_dataset.shape[0]):
+        with torch.no_grad():
+            anchor_encodigs = agent.get_latent_encoding(torch.from_numpy(anchor_dataset[idx]).to(device))
+            test_encodings = agent.get_latent_encoding(torch.from_numpy(test_dataset[idx]).to(device))
 
-        plot_observation = []
-        plot_similarities = []
+        cos_similarities = torch.cosine_similarity(anchor_encodigs, test_encodings, dim=1).cpu().detach().numpy()
+        value_similarities = torch.mean(torch.abs(anchor_encodigs - test_encodings), dim=1).cpu().detach().numpy()
 
-        cos_similarities = []
-        value_similarities = []
-        anchor_encodings = agent.get_latent_encoding(torch.tensor(anchor_dataset[anchor_key]).to(device))
-        shuffled_negative_encodings = agent.get_latent_encoding(
-            torch.tensor(shuffled_negative_dataset[anchor_key]).to(device))
-        for x, y, n in zip(anchor_encodings, shuffled_negative_encodings, range(len(anchor_encodings))):
-            cosine_sim = torch.cosine_similarity(x, y, dim=0).cpu().detach().numpy()
-            value_sim = torch.mean(torch.abs(x - y)).cpu().detach().numpy()
+        background_similarities[idx] = (cos_similarities, value_similarities)
 
-            cos_similarities.append(cosine_sim)
-            value_similarities.append(value_sim)
-            if n in verbose_idx:
-                plot_observation.append(anchor_dataset[anchor_key][n])
-                plot_observation.append(shuffled_negative_dataset[anchor_key][n])
-                plot_similarities.append("anchor")
-                plot_similarities.append(f"{cosine_sim:.4f}")
-        background_similarities[anchor_key] = (cos_similarities, value_similarities)
         if verbose_num > 0:
-            better_plot(plot_observation, plot_similarities, f"{plot_name} mean:{np.mean(cos_similarities):.3f}",
-                        pairwise=True)
+            plot_observations = []
+            plot_similarities = []
+            for n in range(verbose_num):
+                plot_observations.append(anchor_dataset[idx][n])
+                plot_observations.append(test_dataset[idx][n])
+                plot_similarities.append(f"anchor")
+                plot_similarities.append(f"{cos_similarities:.4f}")
+
+            better_plot(plot_observations,
+                        plot_similarities,
+                        plot_name=f"{plot_name} mean:{np.mean(cos_similarities):.3f}",
+                        pairwise=True
+                        )
 
     average_cos_similarities = []
     average_val_similarities = []
@@ -139,53 +137,43 @@ def test_same_background(agent, test_dataset, verbose_num, print_details, plot_n
     print(f"{plot_name} average abs value difference: {np.mean(average_val_similarities):.5f}")
 
 
-def test_out_of_distribution(agent, anchor_dataset, test_dataset, shuffled, verbose_num, print_details,
-                             plot_name="Test"):
-    np.random.seed(0)
-    test_dataset = copy.deepcopy(test_dataset)
-    anchor_dataset = copy.deepcopy(anchor_dataset)
+def test_out_of_distribution(agent, anchor_dataset, test_dataset, shuffled, verbose_num, print_details, plot_name="Test"):
 
-    # Shuffle the data
+    np.random.seed(0)
+
     if shuffled:
-        num_samples = len(list(test_dataset.values())[0])
-        idx = np.random.permutation(range(num_samples))
-        test_dataset = {key: test_dataset[key][idx] for key in test_dataset}
+        test_dataset = np.random.permutation(test_dataset.squeeze())
+        test_dataset = np.expand_dims(test_dataset, axis=0)
 
     average_env_similarities = {}
-    for anchor_env in anchor_dataset.keys():
-        anchor_env_encodings = agent.get_latent_encoding(torch.tensor(anchor_dataset[anchor_env]).to(device))
+    for data_idx in range(anchor_dataset.shape[0]):
 
-        for env_config in test_dataset.keys():
+        with torch.no_grad():
+            anchor_env_encodings = agent.get_latent_encoding(torch.from_numpy(anchor_dataset[data_idx]).to(device))
 
-            plot_observations = []
-            plot_similarities = []
+        for ood_data_idx in range(test_dataset.shape[0]):
 
-            test_env_encodings = agent.get_latent_encoding(torch.tensor(test_dataset[env_config]).to(device))
+            with torch.no_grad():
+                ood_env_encodings = agent.get_latent_encoding(torch.from_numpy(test_dataset[ood_data_idx]).to(device))
+            cos_similarities = torch.cosine_similarity(anchor_env_encodings, ood_env_encodings, dim=1).cpu().detach().numpy()
+            value_similarities = torch.mean(torch.abs(anchor_env_encodings - ood_env_encodings), dim=1).cpu().detach().numpy()
 
-            cos_similarities = []
-            value_similarities = []
-            for x, y, n in zip(anchor_env_encodings, test_env_encodings, range(len(anchor_env_encodings))):
-
-                value_sim = torch.mean(torch.abs(x - y)).cpu().detach().numpy()
-                cos_sim = torch.cosine_similarity(x, y, dim=0).cpu().detach().numpy()
-
-                cos_similarities.append(cos_sim)
-                value_similarities.append(value_sim)
-
-                if n < verbose_num:
-                    plot_observations.append(anchor_dataset[anchor_env][n])
-                    plot_observations.append(test_dataset[env_config][n])
-                    plot_similarities.append(f"anchor")
-                    plot_similarities.append(f"{cos_sim:.4f}")
+            average_env_similarities[f"{data_idx}_{ood_data_idx}"] = (cos_similarities, value_similarities)
 
             if verbose_num > 0:
+                plot_observations = []
+                plot_similarities = []
+                for n in range(verbose_num):
+                    plot_observations.append(anchor_dataset[data_idx][n])
+                    plot_observations.append(test_dataset[ood_data_idx][n])
+                    plot_similarities.append(f"anchor")
+                    plot_similarities.append(f"{cos_similarities:.4f}")
+
                 better_plot(plot_observations,
                             plot_similarities,
                             plot_name=f"{plot_name} mean:{np.mean(cos_similarities):.3f}",
                             pairwise=True
                             )
-
-            average_env_similarities[f"{anchor_env}_{env_config}"] = (cos_similarities, value_similarities)
 
     average_cos_similarities = []
     average_value_similarities = []
@@ -202,54 +190,78 @@ def test_out_of_distribution(agent, anchor_dataset, test_dataset, shuffled, verb
     print(f"{plot_name} average absolute value difference: {np.mean(average_value_similarities):.5f}")
 
 
-def train_model(agent, optimizer, loss_fn, batch_size, num_negative, numpy_train_dataset):
-    num_envs = numpy_train_dataset.shape[0]
-    num_samples = numpy_train_dataset.shape[1]
+def create_batch(dataset, shuffled_idxs, num_envs, num_samples, batch_idx, batch_size, num_negative):
+    # Select anchor observations
+    anchor_envs = np.arange(batch_idx * batch_size, (batch_idx + 1) * batch_size) % num_envs
+    anchor_obs_ind = shuffled_idxs[batch_idx * batch_size: (batch_idx + 1) * batch_size]
+    batched_anchor_obs = dataset[anchor_envs, anchor_obs_ind]
+
+    # Select positive observations
+    all_envs = np.arange(num_envs).reshape(1, -1) + np.zeros(shape=(batch_size, num_envs), dtype=np.uint8)
+    positive_mask = (np.arange(all_envs.shape[1]) != anchor_envs[:, None])  # Create a mask for removing the anchor envs
+    positive_envs = all_envs[positive_mask]  # Remove anchor envs
+    positive_envs = np.reshape(positive_envs, (all_envs.shape[0], all_envs.shape[1] - 1))
+    selected_positive_envs_idx = np.random.randint(0, positive_envs.shape[1], size=batch_size)
+    positive_envs = np.take_along_axis(positive_envs, selected_positive_envs_idx[:, np.newaxis], axis=1).reshape(-1)
+    batched_positive_obs = dataset[positive_envs, anchor_obs_ind]
+
+    # Select batch_size negative envs
+    same_envs_flag = (np.random.random(size=batch_size) < 0.5) * anchor_envs
+    negative_mask = (np.arange(all_envs.shape[1]) != anchor_envs[:, None])  # Create a mask for removing the anchor envs
+    negative_envs = all_envs[negative_mask]  # Remove anchor envs
+    negative_envs = np.reshape(negative_envs, (all_envs.shape[0], all_envs.shape[1] - 1))
+    selected_negative_envs_idx = np.random.randint(0, negative_envs.shape[1], size=batch_size)
+    selected_negative_envs_idx = np.where(same_envs_flag == 0, selected_negative_envs_idx, same_envs_flag)
+    negative_envs = np.take_along_axis(all_envs, selected_negative_envs_idx[:, np.newaxis], axis=1).reshape(-1)
+
+    # Select num_negative observations for each negative env
+    all_idx = np.arange(num_samples).reshape(1, -1) + np.zeros(shape=(batch_size, num_samples), dtype=np.int32)
+    negative_idx = all_idx[np.arange(num_samples) != anchor_obs_ind[:, None]].reshape((batch_size, -1))
+    selected_negative_obs_idx = np.random.randint(0, negative_idx.shape[1], size=(batch_size, num_negative))
+    batched_negative_obs = dataset[negative_envs[:, None], selected_negative_obs_idx]
+    batched_negative_obs = np.reshape(batched_negative_obs, (batch_size * num_negative, 3, 84, 84))
+
+    return batched_anchor_obs, batched_positive_obs, batched_negative_obs
+
+
+def model_forward_pass(agent, anchor_obs, positive_obs, negative_obs):
+    anchor_encodings = agent.get_latent_encoding(anchor_obs)
+    positive_encodings = agent.get_latent_encoding(positive_obs)
+    negative_encodings = agent.get_latent_encoding(negative_obs)
+
+    # Reshape from (batch_size * num_negative, 512) to (batch_size, num_negative, 512)
+    negative_encodings = torch.reshape(negative_encodings, (batch_size, num_negative, 512))
+
+    return anchor_encodings, positive_encodings, negative_encodings
+
+
+def train_model(agent, optimizer, loss_fn, batch_size, num_negative, train_dataset, device):
+    num_envs = train_dataset.shape[0]
+    num_samples = train_dataset.shape[1]
 
     losses = []
     shuffled_idxs = np.random.permutation(range(num_samples))
 
     for n in range(num_samples // batch_size):
+        anchor_obs, positive_obs, negative_obs = create_batch(dataset=train_dataset,
+                                                              shuffled_idxs=shuffled_idxs,
+                                                              num_envs=num_envs,
+                                                              num_samples=num_samples,
+                                                              batch_idx=n,
+                                                              batch_size=batch_size,
+                                                              num_negative=num_negative
+                                                              )
 
-        start_batch = time.perf_counter()
-        # Select anchor observations
-        anchor_envs = [x % num_envs for x in range(n * batch_size, (n + 1) * batch_size)]
-        anchor_obs_ind = shuffled_idxs[n * batch_size: (n + 1) * batch_size]
-        batched_anchor_obs = numpy_train_dataset[anchor_envs, anchor_obs_ind]
+        # Get the encodings
+        anchor_encodings, positive_encodings, negative_encodings = model_forward_pass(agent=agent,
+                                                                                      anchor_obs=torch.from_numpy(anchor_obs).to(device),
+                                                                                      positive_obs=torch.from_numpy(positive_obs).to(device),
+                                                                                      negative_obs=torch.from_numpy(negative_obs).to(device))
 
-        # Select positive observations
-        all_envs = np.arange(num_envs).reshape(1, -1) + np.zeros(shape=(batch_size, num_envs), dtype=np.uint8)
-
-        positive_envs = np.array([np.random.choice(np.delete(env, value)) for env, value in zip(all_envs, anchor_envs)],
-                                 dtype=np.uint8)
-        batched_positive_obs = numpy_train_dataset[positive_envs, anchor_obs_ind]
-
-        # Select N negative observations
-        same_envs_flag = np.random.random(size=num_negative) < 0.5
-        negative_envs = [x if flag else np.random.choice(np.delete(y, x)) for x, y, flag in zip(anchor_envs, all_envs, same_envs_flag)]
-        all_idx = np.array(
-            np.arange(num_samples).reshape(1, -1) + np.zeros(shape=(batch_size, num_samples), dtype=np.int32))
-        negative_idx = ([np.random.choice(np.delete(x, value), size=num_negative, replace=False) for x, value in
-                         zip(all_idx, anchor_obs_ind)])
-        batched_negative_obs = numpy_train_dataset[negative_envs, negative_idx]
-        batched_negative_obs = np.reshape(batched_negative_obs, (batch_size * num_negative, 3, 84, 84))
-
-        # Get the latent encodings
-        batch_anchor_encodings = agent.get_latent_encoding(torch.from_numpy(batched_anchor_obs).to(device))
-        batch_positive_encodings = agent.get_latent_encoding(torch.from_numpy(batched_positive_obs).to(device))
-        batch_negative_encodings = agent.get_latent_encoding(torch.from_numpy(batched_negative_obs).to(device))
-
-        # Reshape from (batch_size * num_negative, 512) to (batch_size, num_negative, 512)
-        batched_negative_obs = torch.reshape(batch_negative_encodings, (batch_size, num_negative, 512))
-
-        # Update the model
-        loss = loss_fn(batch_anchor_encodings, batch_positive_encodings, batched_negative_obs)
-
+        loss = loss_fn(anchor_encodings, positive_encodings, negative_encodings)
         optimizer.zero_grad()
         loss.backward()
         optimizer.step()
-
-        # Add the loss for the current batch
         losses.append(loss.cpu().detach().numpy())
 
     return np.array(losses)
@@ -278,14 +290,15 @@ def test_model(agent, test_dataset, ood_test_dataset, verbose_num, print_details
 
     print(f"----------Testing same background ood----------")
     test_same_background(agent,
-                         test_dataset=ood_test_dataset,
+                         anchor_dataset=ood_test_dataset,
                          verbose_num=verbose_num,
                          print_details=print_details,
                          plot_name="contrastive_same_background_ood"
                          )
 
     print(f"----------Testing same background ----------")
-    test_same_background(agent, test_dataset=test_dataset,
+    test_same_background(agent,
+                         anchor_dataset=test_dataset,
                          verbose_num=verbose_num,
                          print_details=print_details,
                          plot_name="contrastive_same_background"
@@ -293,25 +306,59 @@ def test_model(agent, test_dataset, ood_test_dataset, verbose_num, print_details
 
 
 def load_dataset(env_configs, ood_env_configs, train_percentage=0.8):
-    dataset = {}
-    ood_dataset = {}
+
+    train_env_num = len(env_configs) - len(ood_env_configs)
+    test_env_num = len(ood_env_configs)
+    total_samples = None
+    dataset = None
+    ood_dataset = None
+
+    dataset_idx = 0
+    ood_dataset_idx = 0
     for env_config in env_configs:
 
         npz = np.load(f"datasets/{env_config}.npz")
-        data_dict = {item: npz[item] for item in npz.files}  # Get all the data from the npz file
+        data_array = npz[npz.files[0]]
+        if total_samples is None:
+            total_samples = data_array.shape[0]
+            dataset = np.zeros(shape=(train_env_num, total_samples, 3, 84, 84), dtype=np.uint8)
+            ood_dataset = np.zeros(shape=(test_env_num, total_samples, 3, 84, 84), dtype=np.uint8)
+
         if env_config in ood_env_configs:
-            ood_dataset[env_config] = np.array(list(data_dict.values())).squeeze()
-        else:
-            dataset[env_config] = np.array(list(data_dict.values())).squeeze()
+            ood_dataset[ood_dataset_idx] = data_array
+            ood_dataset_idx += 1
+        elif env_config in env_configs:
+            dataset[dataset_idx] = data_array
+            dataset_idx += 1
 
-    train_num = int(len(dataset[env_configs[0]]) * train_percentage)
+    train_num = int(total_samples * train_percentage)
 
-    train_dataset = {key: dataset[key][:train_num] for key in dataset}
-    test_dataset = {key: dataset[key][train_num:] for key in dataset}
-    ood_train_dataset = {key: ood_dataset[key][:train_num] for key in ood_dataset}
-    ood_test_dataset = {key: ood_dataset[key][train_num:] for key in ood_dataset}
+    train_dataset = dataset[:, :train_num]
+    test_dataset = dataset[:, train_num:]
+    ood_train_dataset = ood_dataset[:, :train_num]
+    ood_test_dataset = ood_dataset[:, train_num:]
 
     return train_dataset, test_dataset, ood_train_dataset, ood_test_dataset
+
+
+def euclidian_contrastive_loss(temperature, anchor_batch, positive_batch, negative_batch):
+    # Calculate the Euclidean distances
+    positive_distances = -torch.norm(anchor_batch - positive_batch, dim=1)
+
+    # Broadcast the vectors to have the same shape as the matrices
+    anchor_broadcasted = anchor_batch.unsqueeze(1).expand(-1, negative_batch.shape[1], -1)
+    negative_distances = -torch.norm(negative_batch - anchor_broadcasted, dim=2)
+
+    # Apply softmax along dimension 1
+    logits = torch.cat((positive_distances.unsqueeze(1), negative_distances), dim=1)
+
+    # Create labels tensor
+    labels = torch.zeros(logits.shape[0], dtype=torch.long, device=anchor_batch.device)
+
+    # Calculate CrossEntropyLoss
+    output = torch.nn.functional.cross_entropy(logits / temperature, labels)
+
+    return output
 
 
 if __name__ == "__main__":
@@ -326,9 +373,8 @@ if __name__ == "__main__":
     env = make_env(f"configs/cluster-1-floor.yaml", 0, 0, 0, 0)()
     env.single_action_space = env.action_space
     agent = PPONetwork(env).to(device)
-
     ppo_agent_ckpt = "contrastive_cnn.ckpt"
-    agent.load_checkpoint(ppo_agent_ckpt)
+    # agent.load_checkpoint(ppo_agent_ckpt)
 
     # Setup environments
     all_env_configs = [
@@ -350,34 +396,36 @@ if __name__ == "__main__":
 
     # Load the data
     train_dataset, test_dataset, ood_train_dataset, ood_test_dataset = load_dataset(all_env_configs, ood_env_configs)
-    num_samples = train_dataset[list(train_dataset.keys())[0]].shape[0]
 
     # Hyperparams
     num_epochs = 100
     batch_size = 128
-    num_negative = 64
+    num_negative = 128
     encoding_size = 512
 
-    info_nce = InfoNCE(negative_mode='paired')
     optimizer = optim.Adam(agent.parameters())
+    loss_fn = InfoNCE(negative_mode='paired')  # cosine similarity
+    # loss_fn = euclidian_contrastive_loss  # negative euclidian distance
 
-    # Convert the dataset to numpy
-    numpy_train_dataset = np.zeros(shape=(len(train_dataset), num_samples, 3, 84, 84), dtype=np.uint8)
-    for idx, env_name in enumerate(train_dataset):
-        numpy_train_dataset[idx] = train_dataset[env_name]
 
     # Train the model
     for n in range(num_epochs):
+        start_time = time.perf_counter()
         loss = train_model(agent,
                            optimizer=optimizer,
-                           loss_fn=info_nce,
+                           loss_fn=loss_fn,
                            batch_size=batch_size,
                            num_negative=num_negative,
-                           numpy_train_dataset=numpy_train_dataset,
+                           train_dataset=train_dataset,
+                           device=device,
                            )
-        print(f"Epoch: {n}\tLoss: {np.mean(loss)}")
+        end_time = time.perf_counter()
+        print(f"Epoch: {n}\tLoss: {np.mean(loss)}, Time: {end_time - start_time:.2f}")
 
         # Test the model
         if n % 10 == 0:
             test_model(agent, ood_test_dataset, test_dataset, verbose_num=0, print_details=False)
             torch.save(agent.state_dict(), "checkpoints/ppo/contrastive_cnn.ckpt")
+
+    test_model(agent, ood_test_dataset, test_dataset, verbose_num=0, print_details=False)
+    torch.save(agent.state_dict(), "checkpoints/ppo/contrastive_cnn.ckpt")

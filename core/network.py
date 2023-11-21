@@ -14,29 +14,29 @@ class PPONetwork(nn.Module):
         super().__init__()
         self.network = nn.Sequential(
             layer_init(nn.Conv2d(3, 32, 8, stride=4)),
-            nn.ReLU(),
+            nn.ReLU(inplace=True),
             layer_init(nn.Conv2d(32, 64, 4, stride=2)),
-            nn.ReLU(),
+            nn.ReLU(inplace=True),
             layer_init(nn.Conv2d(64, 64, 3, stride=1)),
-            nn.ReLU(),
+            nn.ReLU(inplace=True),
             nn.Flatten(),
             layer_init(nn.Linear(64 * 7 * 7, 512)),
-            nn.ReLU(),
+            nn.ReLU(inplace=True),
         )
 
         self.actor = nn.Sequential(
             layer_init(nn.Linear(512, 256), std=0.01),
-            nn.ReLU(),
+            nn.ReLU(inplace=True),
             layer_init(nn.Linear(256, 128), std=0.01),
-            nn.ReLU(),
+            nn.ReLU(inplace=True),
             layer_init(nn.Linear(128, envs.single_action_space.n), std=0.01),
         )
 
         self.critic = nn.Sequential(
             layer_init(nn.Linear(512, 256), std=1),
-            nn.ReLU(),
+            nn.ReLU(inplace=True),
             layer_init(nn.Linear(256, 128), std=1),
-            nn.ReLU(),
+            nn.ReLU(inplace=True),
             layer_init(nn.Linear(128, 1), std=1),
         )
 
