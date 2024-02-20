@@ -8,13 +8,13 @@ import torch.nn as nn
 import torch.optim as optim
 from torch.utils.tensorboard import SummaryWriter
 
-from core.environment import make_env
+from core.environment import make_env, make_pcg_env
 from core.network import LSTMPPONetwork
 
 from griddly.RenderTools import VideoRecorder
 
 
-def run(args, env_config, total_steps, ckpt_path, freeze_network=False):
+def run(args, env_config, pcg, total_steps, ckpt_path, freeze_cnn):
     run_name = f"{args.env_id}__{args.exp_name}__{args.seed}__{int(time.time())}"
     if args.track:
         import wandb
@@ -43,8 +43,14 @@ def run(args, env_config, total_steps, ckpt_path, freeze_network=False):
     device = torch.device("cuda" if torch.cuda.is_available() and args.cuda else "cpu")
     #  Having different backgrounds helps it to train faster?
     # env setup
+
+    if pcg:
+        env_fn = make_pcg_env
+    else:
+        env_fn = make_env
+
     envs = gym.vector.SyncVectorEnv(
-        [make_env(f"configs/{env_config[i % len(env_config)]}.yaml", args.seed + i, i, args.capture_video, run_name) for
+        [env_fn(f"configs/{env_config[i % len(env_config)]}.yaml", 0, i, args.capture_video, run_name) for
          i in range(args.num_envs)]
     )
     assert isinstance(envs.single_action_space, gym.spaces.Discrete), "only discrete action space is supported"
@@ -238,11 +244,14 @@ def run(args, env_config, total_steps, ckpt_path, freeze_network=False):
     writer.close()
 
 
-def test(env_name, ckpt_path, total_num_episodes):
+def test(env_name, ckpt_path, pcg, total_num_episodes):
     env_config = "cluster-5.yaml"
     ckpt_path = "weights_['cluster-1', 'cluster-2', 'cluster-3', 'cluster-4'].ckpt"
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    env = make_env(f"configs/{env_config}", 0, 0, 0, 0)()
+    if pcg:
+        env = make_pcg_env(f"configs/{env_config}", 0, 0, 0, 0)()
+    else:
+        env = make_env(env_name)(f"configs/{env_config}", 0, 0, 0, 0)
     env.single_action_space = env.action_space
 
     agent = LSTMPPONetwork(env).to(device)

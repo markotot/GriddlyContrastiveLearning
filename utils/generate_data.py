@@ -5,23 +5,11 @@ from time import sleep
 import matplotlib.pyplot as plt
 import torch
 
-from core.environment import make_env
 import numpy as np
 
-from core.level_generator import ClustersLevelGenerator
+from core.environment import make_env
+from core.level_generator import generate_levels
 from core.network import PPONetwork
-
-
-def generate_levels(num_levels):
-    config = {
-        'width': 13,
-        'height': 10
-    }
-    level_generator = ClustersLevelGenerator(config)
-    level_strings = []
-    for n in range(num_levels):
-        level_strings.append(level_generator.generate())
-    return level_strings
 
 
 def get_random_actions(num_total_actions, env_config):
@@ -102,27 +90,28 @@ if __name__ == "__main__":
     num_random_actions = 120_000
     # num_agent_actions = 1
 
-    level_strings = generate_levels(2000)
+    level_strings = generate_levels(2000, 0, 7, 7)
 
     random_actions = get_random_actions(num_random_actions,
-                                        env_config="cluster-1-floor.yaml")
+                                        env_config="fully-observable-back/cluster-1-floor.yaml")
 
     # agent_actions = get_agent_actions(num_agent_actions,
     #                                   env_config="cluster-1-floor.yaml",
     #                                   ckpt_path="weights_['cluster-1'].ckpt")
     print("Actions collected")
 
+    experiment_name = "fully-observable-back"
     env_configs = [
-        "cluster-1-floor.yaml",
-        "cluster-2-grass-15.yaml",
-        "cluster-3-orange.yaml",
-        "cluster-4-lbrown.yaml",
-        "cluster-5-lblue.yaml",
-        "cluster-6-biege.yaml",
-        "cluster-7-space.yaml",
-        "cluster-8-grey.yaml",
-        "cluster-9-red.yaml",
-        "cluster-10-fill.yaml",
+        f"{experiment_name}/cluster-1-floor.yaml",
+        f"{experiment_name}/cluster-2-grass.yaml",
+        f"{experiment_name}/cluster-3-orange.yaml",
+        f"{experiment_name}/cluster-4-lbrown.yaml",
+        f"{experiment_name}/cluster-5-lblue.yaml",
+        f"{experiment_name}/cluster-6-biege.yaml",
+        f"{experiment_name}/cluster-7-space.yaml",
+        f"{experiment_name}/cluster-8-grey.yaml",
+        f"{experiment_name}/cluster-9-red.yaml",
+        f"{experiment_name}/cluster-10-fill.yaml",
     ]
 
     print(f"Collecting random observations")

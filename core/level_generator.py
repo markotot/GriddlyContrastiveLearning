@@ -1,13 +1,5 @@
-import copy
-import time
-
 import numpy as np
 from griddly.util.rllib.environment.level_generator import LevelGenerator
-
-import torch
-
-from core.environment import make_env
-
 
 class ClustersLevelGenerator(LevelGenerator):
     BLUE_BLOCK = 'a'
@@ -27,13 +19,14 @@ class ClustersLevelGenerator(LevelGenerator):
         self._width = config.get('width', 10)
         self._height = config.get('height', 10)
         self._p_red = config.get('p_red', 1.0)
-        self._p_green = config.get('p_green', 1.0)
+        self._p_green = config.get('p_green', 0)
         self._p_blue = config.get('p_blue', 1.0)
-        self._m_red = config.get('m_red', 5)
-        self._m_blue = config.get('m_blue', 5)
-        self._m_green = config.get('m_green', 5)
-        self._m_spike = config.get('m_spike', 5)
-
+        self._m_red = config.get('m_red', 8)
+        self._m_blue = config.get('m_blue', 8)
+        self._m_green = config.get('m_green', 1)
+        self._m_spike = config.get('m_spike', 1)
+        self.seed = config.get('seed', 0)
+        np.random.seed(self.seed)
     def _place_walls(self, map):
 
         # top/bottom wall
@@ -95,15 +88,15 @@ class ClustersLevelGenerator(LevelGenerator):
             self._m_blue
         )
 
-        # Place Green
-        map, possible_locations = self._place_blocks_and_boxes(
-            map,
-            possible_locations,
-            self._p_green,
-            ClustersLevelGenerator.GREEN_BLOCK,
-            ClustersLevelGenerator.GREEN_BOX,
-            self._m_green
-        )
+        # # Place Green
+        # map, possible_locations = self._place_blocks_and_boxes(
+        #     map,
+        #     possible_locations,
+        #     self._p_green,
+        #     ClustersLevelGenerator.GREEN_BLOCK,
+        #     ClustersLevelGenerator.GREEN_BOX,
+        #     self._m_green
+        # )
 
         # Place Spikes
         num_spikes = np.random.choice(self._m_spike)
@@ -126,42 +119,15 @@ class ClustersLevelGenerator(LevelGenerator):
 
         return level_string
 
-
-if __name__ == "__main__":
-
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    env = make_env(f"../configs/cluster-1-floor.yaml", 0, 0, 0, 0)()
-
+def generate_levels(num_levels, seed, width, height):
     config = {
-        'width': 13,
-        'height': 10
+        'width': width,
+        'height': height,
+        'seed': seed,
     }
-    level_generator = ClustersLevelGenerator(config)
 
-    num_actions = 20_000
-    num_levels = 1000
+    level_generator = ClustersLevelGenerator(config)
     level_strings = []
     for n in range(num_levels):
         level_strings.append(level_generator.generate())
-    env.reset(level_string=level_strings[0])
-    num_episode = 1
-    steps = 0
-    observations = []
-    while num_episode < num_levels and steps < num_actions:
-        action = env.action_space.sample()
-        obs, reward, done, info = env.step(action)
-        steps += 1
-        if done:
-            env.reset(level_string=level_strings[num_episode])
-            num_episode += 1
-        else:
-            observations.append(copy.deepcopy(obs))
-
-    observations = np.array(observations)
-    print("Number of observations: ", len(observations))
-
-    _, idx = np.unique(observations, axis=0, return_index=True)
-    sorted_idx = np.sort(idx)
-    filtered_obs = observations[sorted_idx]
-    print("Number of unique observations: ", len(filtered_obs))
-
+    return level_strings

@@ -48,6 +48,7 @@ def better_plot(observations, losses, plot_name, pairwise=False):
     n_rows = max(1, int(np.ceil(len(observations) / n_cols)))
     fig, axes = plt.subplots(nrows=n_rows, ncols=n_cols, figsize=(12, 12))
 
+
     n = 0
     for i in range(n_rows):
         for j in range(n_cols):
@@ -55,10 +56,16 @@ def better_plot(observations, losses, plot_name, pairwise=False):
             if n >= len(observations):
                 continue
 
-            axes[i][j].axis('off')
-            axes[i][j].imshow(observations[n])
-            axes[i][j].set_title(losses[n])
+            if i > 1:
+                axes[i][j].axis('off')
+                axes[i][j].imshow(observations[n])
+                axes[i][j].set_title(losses[n])
+            else:
+                axes[j].axis('off')
+                axes[j].imshow(observations[n])
+                axes[j].set_title(losses[n])
             n += 1
+
 
     plt.suptitle(plot_name)
 
@@ -114,7 +121,7 @@ def test_same_background(agent, anchor_dataset, verbose_num, print_details, plot
                 plot_observations.append(anchor_dataset[idx][n])
                 plot_observations.append(test_dataset[idx][n])
                 plot_similarities.append(f"anchor")
-                plot_similarities.append(f"{cos_similarities:.4f}")
+                plot_similarities.append(f"{np.mean(cos_similarities):.4f}")
 
             better_plot(plot_observations,
                         plot_similarities,
@@ -167,7 +174,7 @@ def test_out_of_distribution(agent, anchor_dataset, test_dataset, shuffled, verb
                     plot_observations.append(anchor_dataset[data_idx][n])
                     plot_observations.append(test_dataset[ood_data_idx][n])
                     plot_similarities.append(f"anchor")
-                    plot_similarities.append(f"{cos_similarities:.4f}")
+                    plot_similarities.append(f"{np.mean(cos_similarities):.4f}")
 
                 better_plot(plot_observations,
                             plot_similarities,
@@ -224,17 +231,6 @@ def create_batch(dataset, shuffled_idxs, num_envs, num_samples, batch_idx, batch
     return batched_anchor_obs, batched_positive_obs, batched_negative_obs
 
 
-def model_forward_pass(agent, anchor_obs, positive_obs, negative_obs):
-    anchor_encodings = agent.get_latent_encoding(anchor_obs)
-    positive_encodings = agent.get_latent_encoding(positive_obs)
-    negative_encodings = agent.get_latent_encoding(negative_obs)
-
-    # Reshape from (batch_size * num_negative, 512) to (batch_size, num_negative, 512)
-    negative_encodings = torch.reshape(negative_encodings, (batch_size, num_negative, 512))
-
-    return anchor_encodings, positive_encodings, negative_encodings
-
-
 def train_model(agent, optimizer, loss_fn, batch_size, num_negative, train_dataset, device):
     num_envs = train_dataset.shape[0]
     num_samples = train_dataset.shape[1]
@@ -253,10 +249,10 @@ def train_model(agent, optimizer, loss_fn, batch_size, num_negative, train_datas
                                                               )
 
         # Get the encodings
-        anchor_encodings, positive_encodings, negative_encodings = model_forward_pass(agent=agent,
-                                                                                      anchor_obs=torch.from_numpy(anchor_obs).to(device),
-                                                                                      positive_obs=torch.from_numpy(positive_obs).to(device),
-                                                                                      negative_obs=torch.from_numpy(negative_obs).to(device))
+        anchor_encodings = agent.get_latent_encoding(torch.from_numpy(anchor_obs).to(device))
+        positive_encodings = agent.get_latent_encoding(torch.from_numpy(positive_obs).to(device))
+        negative_encodings = agent.get_latent_encoding(torch.from_numpy(negative_obs).to(device))
+        negative_encodings = torch.reshape(negative_encodings, (batch_size, num_negative, 512))
 
         loss = loss_fn(anchor_encodings, positive_encodings, negative_encodings)
         optimizer.zero_grad()
@@ -340,6 +336,15 @@ def load_dataset(env_configs, ood_env_configs, train_percentage=0.8):
 
     return train_dataset, test_dataset, ood_train_dataset, ood_test_dataset
 
+def load_agent_model(ppo_agent_ckpt):
+
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    env = make_env(f"configs/cluster-1-floor.yaml", 0, 0, 0, 0)()
+    env.single_action_space = env.action_space
+    agent = PPONetwork(env).to(device)
+    if ppo_agent_ckpt is not None:
+        agent.load_checkpoint(ppo_agent_ckpt)
+    return agent
 
 def euclidian_contrastive_loss(temperature, anchor_batch, positive_batch, negative_batch):
     # Calculate the Euclidean distances
@@ -367,14 +372,10 @@ if __name__ == "__main__":
     np.random.seed(0)
     torch.manual_seed(0)
     torch.backends.cudnn.deterministic = True
+    torch.backends.cudnn.benchmark = True
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-
-    env = make_env(f"configs/cluster-1-floor.yaml", 0, 0, 0, 0)()
-    env.single_action_space = env.action_space
-    agent = PPONetwork(env).to(device)
     ppo_agent_ckpt = "contrastive_cnn.ckpt"
-    # agent.load_checkpoint(ppo_agent_ckpt)
 
     # Setup environments
     all_env_configs = [
@@ -396,9 +397,9 @@ if __name__ == "__main__":
 
     # Load the data
     train_dataset, test_dataset, ood_train_dataset, ood_test_dataset = load_dataset(all_env_configs, ood_env_configs)
-
+    agent = load_agent_model(ppo_agent_ckpt=ppo_agent_ckpt)
     # Hyperparams
-    num_epochs = 100
+    num_epochs = 10
     batch_size = 128
     num_negative = 128
     encoding_size = 512
@@ -424,8 +425,8 @@ if __name__ == "__main__":
 
         # Test the model
         if n % 10 == 0:
-            test_model(agent, ood_test_dataset, test_dataset, verbose_num=0, print_details=False)
+            test_model(agent, ood_test_dataset, test_dataset, verbose_num=2, print_details=False)
             torch.save(agent.state_dict(), "checkpoints/ppo/contrastive_cnn.ckpt")
 
-    test_model(agent, ood_test_dataset, test_dataset, verbose_num=0, print_details=False)
+    test_model(agent, ood_test_dataset, test_dataset, verbose_num=2, print_details=False)
     torch.save(agent.state_dict(), "checkpoints/ppo/contrastive_cnn.ckpt")

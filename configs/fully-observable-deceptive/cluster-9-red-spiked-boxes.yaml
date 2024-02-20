@@ -5,7 +5,7 @@ Environment:
   Observers:
     Sprite2D:
       TileSize: 12
-      BackgroundTile: oryx/oryx_fantasy/floor1-2.png
+      BackgroundTile: gvgai/oryx/backRed.png
   Variables:
     - Name: box_count
       InitialValue: 0

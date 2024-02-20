@@ -180,7 +180,7 @@ Objects:
         ActionId: 1
     Observers:
       Sprite2D:
-        - Image: oryx/oryx_tiny_galaxy/tg_sliced/tg_items/tg_items_armor_boots_blue.png
+        - Image: oryx/oryx_tiny_galaxy/tg_sliced/tg_items/tg_items_armor_chest_red.png
       Block2D:
         - Shape: square
           Color: [0.5, 0.2, 0.2]
@@ -189,7 +189,7 @@ Objects:
     MapCharacter: b
     Observers:
       Sprite2D:
-        - Image: oryx/oryx_tiny_galaxy/tg_sliced/tg_items/tg_items_armor_boots_green.png
+        - Image: oryx/oryx_tiny_galaxy/tg_sliced/tg_items/tg_items_armor_boots_red.png
       Block2D:
         - Shape: square
           Color: [1.0, 0.0, 0.0]
@@ -202,7 +202,7 @@ Objects:
         ActionId: 1
     Observers:
       Sprite2D:
-        - Image: oryx/oryx_tiny_galaxy/tg_sliced/tg_items/tg_items_armor_chest_blue.png
+        - Image: oryx/oryx_tiny_galaxy/tg_sliced/tg_items/tg_items_armor_gloves_grey.png
       Block2D:
         - Shape: square
           Color: [0.2, 0.5, 0.2]
@@ -211,7 +211,7 @@ Objects:
     MapCharacter: c
     Observers:
       Sprite2D:
-        - Image: oryx/oryx_tiny_galaxy/tg_sliced/tg_items/tg_items_armor_chest_green.png
+        - Image: oryx/oryx_tiny_galaxy/tg_sliced/tg_items/tg_items_armor_chest_grey.png
       Block2D:
         - Shape: square
           Color: [0.0, 1.0, 0.0]
@@ -224,7 +224,7 @@ Objects:
         ActionId: 1
     Observers:
       Sprite2D:
-        - Image: oryx/oryx_tiny_galaxy/tg_sliced/tg_items/tg_items_armor_gloves_blue.png
+        - Image: oryx/oryx_tiny_galaxy/tg_sliced/tg_items/tg_items_armor_chest_blue.png
       Block2D:
         - Shape: square
           Color: [0.2, 0.2, 0.5]
@@ -233,7 +233,7 @@ Objects:
     MapCharacter: a
     Observers:
       Sprite2D:
-        - Image: oryx/oryx_tiny_galaxy/tg_sliced/tg_items/tg_items_armor_gloves_green.png
+        - Image: oryx/oryx_tiny_galaxy/tg_sliced/tg_items/tg_items_armor_boots_blue.png
       Block2D:
         - Shape: square
           Color: [0.0, 0.0, 1.0]

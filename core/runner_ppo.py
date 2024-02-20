@@ -1,3 +1,4 @@
+import copy
 import random
 import time
 
@@ -10,10 +11,12 @@ from griddly.RenderTools import VideoRecorder
 from torch.utils.tensorboard import SummaryWriter
 
 
-from core.environment import make_env
+from core.environment import make_env, make_pcg_env
 from core.network import PPONetwork
+from utils.videos import record_video
 
-def run(args, env_config, total_steps,  ckpt_path, freeze_cnn):
+
+def run(args, env_config, pcg, total_steps,  ckpt_path, freeze_cnn):
 
     run_name = f"{args.env_id}__{args.exp_name}__{args.seed}__{int(time.time())}"
     if args.track:
@@ -42,8 +45,13 @@ def run(args, env_config, total_steps,  ckpt_path, freeze_cnn):
 
     device = torch.device("cuda" if torch.cuda.is_available() and args.cuda else "cpu")
     # env setup
+    if pcg:
+        env_fn = make_pcg_env
+    else:
+        env_fn = make_env
+
     envs = gym.vector.SyncVectorEnv(
-        [make_env(f"configs/{env_config[i % len(env_config)]}.yaml", args.seed + i, i, args.capture_video, run_name) for
+        [env_fn(f"configs/{env_config[i % len(env_config)]}.yaml", 0, i, args.capture_video, run_name) for
          i in range(args.num_envs)]
     )
     assert isinstance(envs.single_action_space, gym.spaces.Discrete), "only discrete action space is supported"
@@ -198,10 +206,16 @@ def run(args, env_config, total_steps,  ckpt_path, freeze_cnn):
         var_y = np.var(y_true)
         explained_var = np.nan if var_y == 0 else 1 - np.var(y_true - y_pred) / var_y
 
-        if update % 10 == 0:
+        if update % 10 == 1:
             print("SPS:", int(global_step / (time.time() - start_time)))
             print(f"Saving checkpoint, global step: {global_step}")
-            agent.save_checkpoint(path=f"weights_{env_config}.ckpt")
+            save_name = [x.split('/')[-1] for x in env_config]
+            agent.save_checkpoint(path=f"weights_{save_name}.ckpt")
+
+            if args.save_video_episodes > 0:
+                record_video(agent, env_config, args.save_video_episodes, global_step=global_step)
+
+
         # TRY NOT TO MODIFY: record rewards for plotting purposes
         writer.add_scalar("charts/learning_rate", optimizer.param_groups[0]["lr"], global_step)
         writer.add_scalar("losses/value_loss", v_loss.item(), global_step)
@@ -219,49 +233,59 @@ def run(args, env_config, total_steps,  ckpt_path, freeze_cnn):
     envs.close()
     writer.close()
 
-def test(env_name, ckpt_path, total_num_episodes=20):
+def test(env_names, ckpt_path, pcg, total_num_episodes):
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    env = make_env(f"configs/{env_name}", 0, 0,0,0)()
-    env.single_action_space = env.action_space
-    agent = PPONetwork(env).to(device)
+    for env_name in env_names:
+        if pcg:
+            env = make_pcg_env(f"configs/{env_name}.yaml", 0, 0,0,0)()
+        else:
+            env = make_env(f"configs/{env_name}.yaml", 0, 0,0,0)()
 
-    agent.load_checkpoint(ckpt_path)
-    video_recorder = VideoRecorder()
+        env.single_action_space = env.action_space
+        agent = PPONetwork(env).to(device)
+        agent.load_checkpoint(ckpt_path)
 
-    obs = env.reset()
+        video_recorder = VideoRecorder()
 
-    video_frame = np.moveaxis(obs, 0, -1)
-    video_recorder.start(f"videos/ppo/{ckpt_path.split('.')[0]}_{env_name.split('.')[0]}.mp4", video_frame.shape)
+        obs = env.reset()
 
-    obs = torch.tensor(obs).to(device)
-    total_reward = 0
-    num_episodes = 0
-    episode_rewards = []
-    average_episode_reward = []
-    while num_episodes < total_num_episodes:
+        video_frame = np.moveaxis(obs, 0, -1)
+        video_path = f"videos/ppo/{env_name.split('/')[-1].split('.')[0]}.mp4"
+        video_recorder.start(video_path, video_frame.shape)
 
-        action, _, _, _ = agent.get_action_and_value(obs.unsqueeze(0))
-        obs, reward, done, info = env.step(action.cpu().numpy())
-        if num_episodes < 10:
-            video_frame = np.moveaxis(obs, 0, -1)
-            video_recorder.add_frame(video_frame)
+        obs = torch.tensor(obs).to(device)
+        total_reward = 0
+        num_episodes = 0
+        episode_rewards = []
+        average_episode_reward = []
+        while num_episodes < total_num_episodes:
 
-        obs = torch.from_numpy(obs).to(device)
+            action, _, _, _ = agent.get_action_and_value(obs.unsqueeze(0))
+            obs, reward, done, info = env.step(action.cpu().numpy())
+            if num_episodes < 10:
+                video_frame = np.rot90(np.moveaxis(obs, 0, -1), 3)
+                video_recorder.add_frame(video_frame)
 
-        # env.render()
-        total_reward += reward
-        if done:
-            num_episodes += 1
-            episode_rewards.append(total_reward)
-            total_reward = 0
-            env.reset()
-            if num_episodes % 10 == 0:
-                print("Episode: ", num_episodes)
+            obs = torch.from_numpy(obs).to(device)
 
-            if "episode" in info.keys():
-                average_episode_reward.append(info['episode']['r'])
+            # env.render()
+            total_reward += reward
+            if done:
+                num_episodes += 1
+                episode_rewards.append(total_reward)
+                total_reward = 0
+                obs = env.reset()
+                obs = torch.from_numpy(obs).to(device)
+                if num_episodes % 10 == 0:
+                    print("Episode: ", num_episodes)
 
-    video_recorder.close()
-    print("Average episode rewards: ", np.array(average_episode_reward).mean())
-    print("Episode rewards: ", np.array(episode_rewards).mean())
+                if "episode" in info.keys():
+                    average_episode_reward.append(info['episode']['r'])
+
+        video_recorder.close()
+
+        print("\nENV: ", env_name)
+        print("Saved video successfully at: ", video_path)
+        print("Average episode rewards: ", np.array(average_episode_reward).mean())
+        print("Episode rewards: ", np.array(episode_rewards).mean())

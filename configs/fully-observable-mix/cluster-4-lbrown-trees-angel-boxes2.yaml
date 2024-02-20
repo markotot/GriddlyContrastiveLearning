@@ -179,19 +179,19 @@ Objects:
         ActionId: 1
     Observers:
       Sprite2D:
-        - Image: gvgai/newset/blockR.png
+        - Image: gvgai/newset/blockT.png
       Block2D:
         - Shape: square
-          Color: [0.5, 0.2, 0.2]
+          Color: [ 0.5, 0.2, 0.2 ]
           Scale: 0.5
   - Name: red_block
     MapCharacter: b
     Observers:
       Sprite2D:
-        - Image: gvgai/newset/blockR2.png
+        - Image: gvgai/newset/blockT2.png
       Block2D:
         - Shape: square
-          Color: [1.0, 0.0, 0.0]
+          Color: [ 1.0, 0.0, 0.0 ]
           Scale: 1.0
 
   - Name: green_box
@@ -204,7 +204,7 @@ Objects:
         - Image: gvgai/newset/blockG.png
       Block2D:
         - Shape: square
-          Color: [0.2, 0.5, 0.2]
+          Color: [ 0.2, 0.5, 0.2 ]
           Scale: 0.5
   - Name: green_block
     MapCharacter: c
@@ -213,7 +213,7 @@ Objects:
         - Image: gvgai/newset/blockG2.png
       Block2D:
         - Shape: square
-          Color: [0.0, 1.0, 0.0]
+          Color: [ 0.0, 1.0, 0.0 ]
           Scale: 1.0
 
   - Name: blue_box
@@ -223,19 +223,19 @@ Objects:
         ActionId: 1
     Observers:
       Sprite2D:
-        - Image: gvgai/newset/blockB.png
+        - Image: gvgai/newset/blockY.png
       Block2D:
         - Shape: square
-          Color: [0.2, 0.2, 0.5]
+          Color: [ 0.2, 0.2, 0.5 ]
           Scale: 0.5
   - Name: blue_block
     MapCharacter: a
     Observers:
       Sprite2D:
-        - Image: gvgai/newset/blockB2.png
+        - Image: gvgai/newset/blockY2.png
       Block2D:
         - Shape: square
-          Color: [0.0, 0.0, 1.0]
+          Color: [ 0.0, 0.0, 1.0 ]
           Scale: 1.0
 
   - Name: broken_box
@@ -244,5 +244,5 @@ Objects:
         - Image: gvgai/newset/block3.png
       Block2D:
         - Shape: triangle
-          Color: [1.0, 0.0, 1.0]
-          Scale: 1.0
+          Color: [ 1.0, 0.0, 1.0 ]
+          S

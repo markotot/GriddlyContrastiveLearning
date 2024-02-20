@@ -180,7 +180,7 @@ Objects:
         ActionId: 1
     Observers:
       Sprite2D:
-        - Image: sprite2d/1.png
+        - Image: gvgai/newset/pawn1R.png
       Block2D:
         - Shape: square
           Color: [0.5, 0.2, 0.2]
@@ -189,7 +189,7 @@ Objects:
     MapCharacter: b
     Observers:
       Sprite2D:
-        - Image: sprite2d/2.png
+        - Image: gvgai/newset/queenR.png
       Block2D:
         - Shape: square
           Color: [1.0, 0.0, 0.0]
@@ -224,7 +224,7 @@ Objects:
         ActionId: 1
     Observers:
       Sprite2D:
-        - Image: sprite2d/5.png
+        - Image: gvgai/newset/pawn1B.png
       Block2D:
         - Shape: square
           Color: [0.2, 0.2, 0.5]
@@ -233,7 +233,7 @@ Objects:
     MapCharacter: a
     Observers:
       Sprite2D:
-        - Image: sprite2d/6.png
+        - Image: gvgai/newset/queenB.png
       Block2D:
         - Shape: square
           Color: [0.0, 0.0, 1.0]

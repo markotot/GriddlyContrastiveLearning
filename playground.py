@@ -1,78 +1,44 @@
-import torch
+import time
 
-class MyModule(torch.nn.Module):
-    def __init__(self):
-        super().__init__()
-        self.lin = torch.nn.Linear(100, 10)
-
-    def forward(self, x):
-        return torch.nn.functional.relu(self.lin(x))
-@torch.compile
-def opt_foo2(x, y):
-    a = torch.sin(x)
-    b = torch.cos(y)
-    return a + b
-
-def timed(fn):
-    start = torch.cuda.Event(enable_timing=True)
-    end = torch.cuda.Event(enable_timing=True)
-    start.record()
-    result = fn()
-    end.record()
-    torch.cuda.synchronize()
-    return result, start.elapsed_time(end) / 1000
-
-N_ITERS = 10
-
-from torchvision.models import densenet121
-def init_model():
-    return densenet121().to(torch.float32).cuda()
-
-def generate_data(b):
-    return (
-        torch.randn(b, 3, 128, 128).to(torch.float32).cuda(),
-        torch.randint(1000, (b,)).cuda(),
-    )
+import core.runner_lstm
+import core.runner_ppo
+from core.environment import make_pcg_env, make_env
 
 if __name__ == "__main__":
-    model = init_model()
 
-    # Reset since we are using a different mode.
-    import torch._dynamo
+    model = "ppo"
 
-    torch._dynamo.reset()
+    experiment_type = "fully-observable-mix"
 
-    model_opt = torch.compile(model, mode="reduce-overhead")
+    env_config = "cluster-2-grass-doors-alien-cars.yaml"
+    # env_config = "cluster-4-lbrown-trees-angel-boxes2.yaml"
+    # env_config = "cluster-5-lblue-fence-rogue-armor.yaml"
+    # env_config = "cluster-9-red-fire-coins-chess.yaml"
 
-    inp = generate_data(16)[0]
-    with torch.no_grad():
-        print("eager:", timed(lambda: model(inp))[1])
-        print("compile:", timed(lambda: model_opt(inp))[1])
+    ckpt_path = "weights_['cluster-1-floor'].ckpt"
+    pcg = False
+    env_name = f"{experiment_type}/{env_config}"
+    actions_sequence = []
+    if pcg:
+        env = make_pcg_env(f"configs/{env_name}", 0, 0, 0, 0)()
+    else:
+        env = make_env(f"configs/{env_name}", 0, 0, 0, 0)()
 
-    eager_times = []
-    for i in range(N_ITERS):
-        inp = generate_data(16)[0]
-        with torch.no_grad():
-            _, eager_time = timed(lambda: model(inp))
-        eager_times.append(eager_time)
-        print(f"eager eval time {i}: {eager_time}")
+    actions = [3, 4, 1, 2, 2, 3, 4, 4,
+               1, 4, 4, 1, 1, 3, 2, 2, 2, 1,
+                1, 4, 4, 2, 1, 4, 4, 3, 3,
+                3, 2, 3, 4
+               ]
 
-    print("~" * 10)
-
-    compile_times = []
-    for i in range(N_ITERS):
-        inp = generate_data(16)[0]
-        with torch.no_grad():
-            _, compile_time = timed(lambda: model_opt(inp))
-        compile_times.append(compile_time)
-        print(f"compile eval time {i}: {compile_time}")
-    print("~" * 10)
-
-    import numpy as np
-
-    eager_med = np.median(eager_times)
-    compile_med = np.median(compile_times)
-    speedup = eager_med / compile_med
-    assert (speedup > 1)
-    print(f"(eval) eager median: {eager_med}, compile median: {compile_med}, speedup: {speedup}x")
-    print("~" * 10)
+    rewards = 0
+    while True:
+        env.reset()
+        for action in actions:
+            env.render()
+            obs, reward, done, info = env.step(action)
+            rewards += reward
+            time.sleep(0.1)
+            if done:
+                print(rewards)
+                break
+        env.close()

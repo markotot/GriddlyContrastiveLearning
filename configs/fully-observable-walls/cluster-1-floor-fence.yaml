@@ -142,22 +142,22 @@ Objects:
       Sprite2D:
         - TilingMode: WALL_16
           Image:
-            - images/sprite2d/fence.png
-            - images/sprite2d/fence.png
-            - images/sprite2d/fence.png
-            - images/sprite2d/fence.png
-            - images/sprite2d/fence.png
-            - images/sprite2d/fence.png
-            - images/sprite2d/fence.png
-            - images/sprite2d/fence.png
-            - images/sprite2d/fence.png
-            - images/sprite2d/fence.png
-            - images/sprite2d/fence.png
-            - images/sprite2d/fence.png
-            - images/sprite2d/fence.png
-            - images/sprite2d/fence.png
-            - images/sprite2d/fence.png
-            - images/sprite2d/fence.png
+            - sprite2d/fence.png
+            - sprite2d/fence.png
+            - sprite2d/fence.png
+            - sprite2d/fence.png
+            - sprite2d/fence.png
+            - sprite2d/fence.png
+            - sprite2d/fence.png
+            - sprite2d/fence.png
+            - sprite2d/fence.png
+            - sprite2d/fence.png
+            - sprite2d/fence.png
+            - sprite2d/fence.png
+            - sprite2d/fence.png
+            - sprite2d/fence.png
+            - sprite2d/fence.png
+            - sprite2d/fence.png
       Block2D:
         - Shape: square
           Color: [0.5, 0.5, 0.5]

@@ -3,6 +3,7 @@ import torch
 import torch.nn as nn
 from torch.distributions.categorical import Categorical
 
+
 def layer_init(layer, std=np.sqrt(2), bias_const=0.0):
     torch.nn.init.orthogonal_(layer.weight, std)
     torch.nn.init.constant_(layer.bias, bias_const)
@@ -39,7 +40,6 @@ class PPONetwork(nn.Module):
             nn.ReLU(inplace=True),
             layer_init(nn.Linear(128, 1), std=1),
         )
-
 
     def get_value(self, x):
         return self.critic(self.network(x / 255.0))
@@ -107,6 +107,9 @@ class LSTMPPONetwork(nn.Module):
             new_hidden += [h]
         new_hidden = torch.flatten(torch.cat(new_hidden), 0, 1)
         return new_hidden, lstm_state
+
+    def get_latent_encoding(self, x):
+        return self.network(x / 255.0)
 
     def get_value(self, x, lstm_state, done):
         hidden, _ = self.get_states(x, lstm_state, done)

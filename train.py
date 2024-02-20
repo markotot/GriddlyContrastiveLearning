@@ -32,11 +32,11 @@ def parse_args():
         help="total timesteps of the experiments")
     parser.add_argument("--learning-rate", type=float, default=2.5e-4,
         help="the learning rate of the optimizer")
-    parser.add_argument("--num-envs", type=int, default=64,
+    parser.add_argument("--num-envs", type=int, default=32,
         help="the number of parallel game environments")
     parser.add_argument("--num-steps", type=int, default=256,
         help="the number of steps to run in each environment per policy rollout")
-    parser.add_argument("--anneal-lr", type=lambda x: bool(strtobool(x)), default=True, nargs="?", const=True,
+    parser.add_argument("--anneal-lr", type=lambda x: bool(strtobool(x)), default=False, nargs="?", const=True,
         help="Toggle learning rate annealing for policy and value networks")
     parser.add_argument("--gamma", type=float, default=0.99,
         help="the discount factor gamma")
@@ -60,37 +60,48 @@ def parse_args():
         help="the maximum norm for the gradient clipping")
     parser.add_argument("--target-kl", type=float, default=None,
         help="the target KL divergence threshold")
+    parser.add_argument("--save-video-episodes", type=int, default=5,
+        help="the number of episodes to save as videos")
     args = parser.parse_args()
     args.batch_size = int(args.num_envs * args.num_steps)
     args.minibatch_size = int(args.batch_size // args.num_minibatches)
-    # fmt: on
+
     return args
 
 
 if __name__ == "__main__":
     args = parse_args()
-    model = "ppo"
-    env_configs = [
-        "cluster-1-floor",
-        # "cluster-2-grass-15",
-        # "cluster-3-orange",
-        # "cluster-4-lbrown",
-        # "cluster-5-lblue",
-        # "cluster-6-biege",
-        # "cluster-7-space",l
-        # "cluster-8-grey",
-        # "cluster-9-red",
-        # "cluster-10-fill",
-    ]
 
-    total_steps = 4_000_000
-    # load_ckpt_path = "contrastive_cnn.ckpt"
-    load_ckpt_path = None
-    freeze_cnn = True
+    experiment_type = "fully-observable-walls"
+    # experiment_type = "partially-observable"
+    env_configs = [
+        f"{experiment_type}/cluster-1-floor",
+        f"{experiment_type}/cluster-1-floor-doors",
+        f"{experiment_type}/cluster-1-floor-fence",
+        f"{experiment_type}/cluster-1-floor-trees",
+        f"{experiment_type}/cluster-1-floor-food",
+
+        # f"{experiment_type}/cluster-1-floor-necromancer",
+        # f"{experiment_type}/cluster-2-grass",
+        # f"{experiment_type}/cluster-3-orange",
+        # f"{experiment_type}/cluster-4-lbrown",
+        # f"{experiment_type}/cluster-5-lblue",
+        # f"{experiment_type}/cluster-6-biege",
+        # f"{experiment_type}/cluster-7-space",
+        # f"{experiment_type}/cluster-8-grey",
+        # f"{experiment_type}/cluster-9-red",
+        # f"{experiment_type}/cluster-10-fill",
+    ]
+    model = "ppo"
+    total_steps = 1_000_000
+    # load_ckpt_path = "clusters-1-8-ppo-2mil.ckpt"
+    load_ckpt_path = "weights_['cluster-1-floor', 'cluster-1-floor-doors', 'cluster-1-floor-fence', 'cluster-1-floor-trees'].ckpt"
+    freeze_cnn = False
+    pcg = False
 
     if model == "ppo":
-        core.runner_ppo.run(args, env_configs, total_steps=total_steps, ckpt_path=load_ckpt_path, freeze_cnn=freeze_cnn)
+        core.runner_ppo.run(args, env_configs, pcg=pcg, total_steps=total_steps, ckpt_path=load_ckpt_path, freeze_cnn=freeze_cnn)
     elif model == "lstm":
-        core.runner_lstm.run(args, env_configs, total_steps=total_steps, ckpt_path=load_ckpt_path, freeze_cnn=freeze_cnn)
+        core.runner_lstm.run(args, env_configs, pcg=pcg, total_steps=total_steps, ckpt_path=load_ckpt_path, freeze_cnn=freeze_cnn)
 
 
