@@ -2,6 +2,9 @@ import argparse
 import os
 from distutils.util import strtobool
 
+import numpy as np
+import torch
+
 import core.runner_ppo
 import core.runner_lstm
 
@@ -30,11 +33,11 @@ def parse_args():
         help="the id of the environment")
     parser.add_argument("--total-timesteps", type=int, default=10_000_000,
         help="total timesteps of the experiments")
-    parser.add_argument("--learning-rate", type=float, default=2.5e-4,
+    parser.add_argument("--learning-rate", type=float, default=5e-4,
         help="the learning rate of the optimizer")
     parser.add_argument("--num-envs", type=int, default=32,
         help="the number of parallel game environments")
-    parser.add_argument("--num-steps", type=int, default=256,
+    parser.add_argument("--num-steps", type=int, default=128,
         help="the number of steps to run in each environment per policy rollout")
     parser.add_argument("--anneal-lr", type=lambda x: bool(strtobool(x)), default=False, nargs="?", const=True,
         help="Toggle learning rate annealing for policy and value networks")
@@ -42,9 +45,9 @@ def parse_args():
         help="the discount factor gamma")
     parser.add_argument("--gae-lambda", type=float, default=0.95,
         help="the lambda for the general advantage estimation")
-    parser.add_argument("--num-minibatches", type=int, default=4,
+    parser.add_argument("--num-minibatches", type=int, default=8,
         help="the number of mini-batches")
-    parser.add_argument("--update-epochs", type=int, default=4,
+    parser.add_argument("--update-epochs", type=int, default=8,
         help="the K epochs to update the policy")
     parser.add_argument("--norm-adv", type=lambda x: bool(strtobool(x)), default=True, nargs="?", const=True,
         help="Toggles advantages normalization")
@@ -56,7 +59,7 @@ def parse_args():
         help="coefficient of the entropy")
     parser.add_argument("--vf-coef", type=float, default=0.5,
         help="coefficient of the value function")
-    parser.add_argument("--max-grad-norm", type=float, default=0.5,
+    parser.add_argument("--max-grad-norm", type=float, default=1,
         help="the maximum norm for the gradient clipping")
     parser.add_argument("--target-kl", type=float, default=None,
         help="the target KL divergence threshold")
@@ -72,14 +75,19 @@ def parse_args():
 if __name__ == "__main__":
     args = parse_args()
 
-    experiment_type = "fully-observable-walls"
-    # experiment_type = "partially-observable"
+    # Making the training process deterministic
+    np.random.seed(0)
+    torch.manual_seed(0)
+    torch.backends.cudnn.deterministic = True
+    torch.backends.cudnn.benchmark = True
+
+    experiment_type = "fully-observable-back"
     env_configs = [
         f"{experiment_type}/cluster-1-floor",
-        f"{experiment_type}/cluster-1-floor-doors",
-        f"{experiment_type}/cluster-1-floor-fence",
-        f"{experiment_type}/cluster-1-floor-trees",
-        f"{experiment_type}/cluster-1-floor-food",
+        # f"{experiment_type}/cluster-1-floor-doors",
+        # f"{experiment_type}/cluster-1-floor-fence",
+        # f"{experiment_type}/cluster-1-floor-trees",
+        # f"{experiment_type}/cluster-1-floor-food",
 
         # f"{experiment_type}/cluster-1-floor-necromancer",
         # f"{experiment_type}/cluster-2-grass",
@@ -93,14 +101,15 @@ if __name__ == "__main__":
         # f"{experiment_type}/cluster-10-fill",
     ]
     model = "ppo"
-    total_steps = 1_000_000
-    # load_ckpt_path = "clusters-1-8-ppo-2mil.ckpt"
-    load_ckpt_path = "weights_['cluster-1-floor', 'cluster-1-floor-doors', 'cluster-1-floor-fence', 'cluster-1-floor-trees'].ckpt"
-    freeze_cnn = False
+    total_steps = 5_000_000
+    # load_ckpt_path = None
+    load_ckpt_path = "contrastive_cnn_983.ckpt"
+    target_path = None
+    freeze_cnn = True
     pcg = False
 
     if model == "ppo":
-        core.runner_ppo.run(args, env_configs, pcg=pcg, total_steps=total_steps, ckpt_path=load_ckpt_path, freeze_cnn=freeze_cnn)
+        core.runner_ppo.run(args, env_configs, pcg=pcg, total_steps=total_steps, ckpt_path=load_ckpt_path, target_path=target_path, freeze_cnn=freeze_cnn)
     elif model == "lstm":
         core.runner_lstm.run(args, env_configs, pcg=pcg, total_steps=total_steps, ckpt_path=load_ckpt_path, freeze_cnn=freeze_cnn)
 

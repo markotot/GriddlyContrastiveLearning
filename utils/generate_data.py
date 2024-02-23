@@ -10,22 +10,12 @@ import numpy as np
 from core.environment import make_env
 from core.level_generator import generate_levels
 from core.network import PPONetwork
-
+from pathlib import Path
 
 def get_random_actions(num_total_actions, env_config):
 
-    env = make_env(f"configs/{env_config}", 0, 0, 0, 0)()
-    env.reset()
-
-    actions = np.zeros(shape=(num_total_actions,))
-    for step in range(0, num_total_actions):
-        a = np.random.randint(0, env.action_space.n)
-        # a = env.action_space.sample()
-        obs, reward, done, info = env.step(a)
-        if done:
-
-            env.reset()
-        actions[step] = a
+    env = make_env(f"../configs/{env_config}", 0, 0, 0, 0)()
+    actions = np.random.randint(0, env.action_space.n, size=(num_total_actions,))
 
     return actions
 
@@ -34,7 +24,7 @@ def get_agent_actions(num_total_actions, env_config, ckpt_path):
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-    env = make_env(f"configs/{env_config}", 0, 0, 0, 0)()
+    env = make_env(f"../configs/{env_config}", 0, 0, 0, 0)()
     env.single_action_space = env.action_space
 
     agent = PPONetwork(env).to(device)
@@ -58,7 +48,7 @@ def get_agent_actions(num_total_actions, env_config, ckpt_path):
 
 def collect_observations(env_config, actions, level_strings):
 
-    env = make_env(f"configs/{env_config}", 0, 0, 0, 0)()
+    env = make_env(f"../configs/{env_config}", 0, 0, 0, 0)()
 
     if level_strings is not None:
         observation = env.reset(level_string=level_strings[0])
@@ -68,10 +58,13 @@ def collect_observations(env_config, actions, level_strings):
     all_observations = np.zeros(shape=(len(actions), *observation.shape), dtype=np.uint8)
 
     num_episode = 1
+    steps_per_episode = 0
     for step, a in enumerate(actions):
 
         obs, reward, done, info = env.step(a)
-        if done:
+        steps_per_episode += 1
+        if done or steps_per_episode >= 100:
+            steps_per_episode = 0
             if level_strings is not None:
                 env.reset(level_string=level_strings[num_episode])
             else:
@@ -87,10 +80,10 @@ if __name__ == "__main__":
 
     np.random.seed(0)
 
-    num_random_actions = 120_000
+    num_random_actions = 200_000
     # num_agent_actions = 1
 
-    level_strings = generate_levels(2000, 0, 7, 7)
+    level_strings = generate_levels(7000, 0, 7, 7)
 
     random_actions = get_random_actions(num_random_actions,
                                         env_config="fully-observable-back/cluster-1-floor.yaml")
@@ -102,14 +95,14 @@ if __name__ == "__main__":
 
     experiment_name = "fully-observable-back"
     env_configs = [
-        f"{experiment_name}/cluster-1-floor.yaml",
-        f"{experiment_name}/cluster-2-grass.yaml",
-        f"{experiment_name}/cluster-3-orange.yaml",
-        f"{experiment_name}/cluster-4-lbrown.yaml",
-        f"{experiment_name}/cluster-5-lblue.yaml",
-        f"{experiment_name}/cluster-6-biege.yaml",
-        f"{experiment_name}/cluster-7-space.yaml",
-        f"{experiment_name}/cluster-8-grey.yaml",
+        # f"{experiment_name}/cluster-1-floor.yaml",
+        # f"{experiment_name}/cluster-2-grass.yaml",
+        # f"{experiment_name}/cluster-3-orange.yaml",
+        # f"{experiment_name}/cluster-4-lbrown.yaml",
+        # f"{experiment_name}/cluster-5-lblue.yaml",
+        # f"{experiment_name}/cluster-6-biege.yaml",
+        # f"{experiment_name}/cluster-7-space.yaml",
+        # f"{experiment_name}/cluster-8-grey.yaml",
         f"{experiment_name}/cluster-9-red.yaml",
         f"{experiment_name}/cluster-10-fill.yaml",
     ]
@@ -130,8 +123,15 @@ if __name__ == "__main__":
         plt.show()
 
     print(f"Filtering observations")
+    my_file = Path("../datasets/unique_idx.npz")
+    if my_file.is_file():
+        unique_idx = np.load("../datasets/unique_idx.npz")
+        idx = unique_idx["idx"]
+    else:
+        _, idx = np.unique(all_observations[env_configs[0]], axis=0, return_index=True)
+        np.savez("../datasets/unique_idx.npz", idx=idx)
+
     filtered_observations = {}
-    _, idx = np.unique(all_observations[env_configs[0]], axis=0, return_index=True)
     for env_config in env_configs:
 
         filtered_observations[env_config] = all_observations[env_config][np.sort(idx)]
@@ -140,7 +140,7 @@ if __name__ == "__main__":
     print(len(filtered_observations[env_config]))
 
     for env_config in env_configs:
-        np.savez(f"datasets/{env_config}.npz", filtered_observations[env_config])
+        np.savez(f"../datasets/{env_config.split('/')[-1]}.npz", filtered_observations[env_config])
 
 
 

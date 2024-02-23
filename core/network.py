@@ -52,6 +52,14 @@ class PPONetwork(nn.Module):
             action = probs.sample()
         return action, probs.log_prob(action), probs.entropy(), self.critic(hidden)
 
+    def get_action_and_value_and_latent(self, x, action=None):
+        hidden = self.network(x / 255.0)
+        logits = self.actor(hidden)
+        probs = Categorical(logits=logits)
+        if action is None:
+            action = probs.sample()
+        return action, probs.log_prob(action), probs.entropy(), self.critic(hidden), hidden
+
     def get_latent_encoding(self, x):
         return self.network(x / 255.0)
 

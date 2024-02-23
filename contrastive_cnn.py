@@ -230,7 +230,6 @@ def create_batch(dataset, shuffled_idxs, num_envs, num_samples, batch_idx, batch
 
     return batched_anchor_obs, batched_positive_obs, batched_negative_obs
 
-
 def train_model(agent, optimizer, loss_fn, batch_size, num_negative, train_dataset, device):
     num_envs = train_dataset.shape[0]
     num_samples = train_dataset.shape[1]
@@ -315,6 +314,7 @@ def load_dataset(env_configs, ood_env_configs, train_percentage=0.8):
 
         npz = np.load(f"datasets/{env_config}.npz")
         data_array = npz[npz.files[0]]
+
         if total_samples is None:
             total_samples = data_array.shape[0]
             dataset = np.zeros(shape=(train_env_num, total_samples, 3, 84, 84), dtype=np.uint8)
@@ -339,7 +339,7 @@ def load_dataset(env_configs, ood_env_configs, train_percentage=0.8):
 def load_agent_model(ppo_agent_ckpt):
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    env = make_env(f"configs/cluster-1-floor.yaml", 0, 0, 0, 0)()
+    env = make_env(f"configs/fully-observable-back/cluster-1-floor.yaml", 0, 0, 0, 0)()
     env.single_action_space = env.action_space
     agent = PPONetwork(env).to(device)
     if ppo_agent_ckpt is not None:
@@ -375,12 +375,13 @@ if __name__ == "__main__":
     torch.backends.cudnn.benchmark = True
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    ppo_agent_ckpt = "contrastive_cnn.ckpt"
+    ppo_agent_ckpt = None
+    # ppo_agent_ckpt = None
 
     # Setup environments
     all_env_configs = [
         "cluster-1-floor.yaml",
-        "cluster-2-grass-15.yaml",
+        "cluster-2-grass.yaml",
         "cluster-3-orange.yaml",
         "cluster-4-lbrown.yaml",
         "cluster-5-lblue.yaml",
@@ -396,21 +397,23 @@ if __name__ == "__main__":
     ]
 
     # Load the data
-    train_dataset, test_dataset, ood_train_dataset, ood_test_dataset = load_dataset(all_env_configs, ood_env_configs)
+    train_dataset, test_dataset, ood_train_dataset, ood_test_dataset = load_dataset(all_env_configs,
+                                                                                    ood_env_configs,
+                                                                                    train_percentage=0.9)
     agent = load_agent_model(ppo_agent_ckpt=ppo_agent_ckpt)
     # Hyperparams
-    num_epochs = 10
+    num_epochs = 100
     batch_size = 128
     num_negative = 128
     encoding_size = 512
 
-    optimizer = optim.Adam(agent.parameters())
+    optimizer = optim.AdamW(agent.parameters())
     loss_fn = InfoNCE(negative_mode='paired')  # cosine similarity
     # loss_fn = euclidian_contrastive_loss  # negative euclidian distance
 
 
     # Train the model
-    for n in range(num_epochs):
+    for n in range(1, num_epochs + 1):
         start_time = time.perf_counter()
         loss = train_model(agent,
                            optimizer=optimizer,
@@ -424,9 +427,9 @@ if __name__ == "__main__":
         print(f"Epoch: {n}\tLoss: {np.mean(loss)}, Time: {end_time - start_time:.2f}")
 
         # Test the model
-        if n % 10 == 0:
-            test_model(agent, ood_test_dataset, test_dataset, verbose_num=2, print_details=False)
-            torch.save(agent.state_dict(), "checkpoints/ppo/contrastive_cnn.ckpt")
+        if n % 5 == 0:
+            test_model(agent, ood_test_dataset, test_dataset, verbose_num=0, print_details=False)
+            torch.save(agent.state_dict(), f"checkpoints/ppo/training/contrastive_cnn_{n}.ckpt")
 
     test_model(agent, ood_test_dataset, test_dataset, verbose_num=2, print_details=False)
-    torch.save(agent.state_dict(), "checkpoints/ppo/contrastive_cnn.ckpt")
+    torch.save(agent.state_dict(), f"checkpoints/ppo/training/contrastive_cnn_{num_epochs}.ckpt")

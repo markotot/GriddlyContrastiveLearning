@@ -14,9 +14,10 @@ from torch.utils.tensorboard import SummaryWriter
 from core.environment import make_env, make_pcg_env
 from core.network import PPONetwork
 from utils.videos import record_video
+from contrastive_cnn import load_dataset
 
 
-def run(args, env_config, pcg, total_steps,  ckpt_path, freeze_cnn):
+def run(args, env_config, pcg, total_steps,  ckpt_path, target_path, freeze_cnn):
 
     run_name = f"{args.env_id}__{args.exp_name}__{args.seed}__{int(time.time())}"
     if args.track:
@@ -44,6 +45,30 @@ def run(args, env_config, pcg, total_steps,  ckpt_path, freeze_cnn):
     torch.backends.cudnn.deterministic = args.torch_deterministic
 
     device = torch.device("cuda" if torch.cuda.is_available() and args.cuda else "cpu")
+
+    all_env_configs = [
+        "cluster-1-floor.yaml",
+        "cluster-2-grass.yaml",
+        "cluster-3-orange.yaml",
+        "cluster-4-lbrown.yaml",
+        "cluster-5-lblue.yaml",
+        "cluster-6-biege.yaml",
+        "cluster-7-space.yaml",
+        "cluster-8-grey.yaml",
+        "cluster-9-red.yaml",
+        "cluster-10-fill.yaml",
+    ]
+
+    ood_env_configs = [
+        "cluster-9-red.yaml",
+    ]
+
+    # Load the data
+    train_dataset, test_dataset, ood_train_dataset, ood_test_dataset = load_dataset(all_env_configs,
+                                                                                    ood_env_configs,
+                                                                                    train_percentage=0.95)
+    test_dataset = torch.from_numpy(test_dataset.reshape(-1, 3, 84, 84)).to(device)
+
     # env setup
     if pcg:
         env_fn = make_pcg_env
@@ -57,12 +82,18 @@ def run(args, env_config, pcg, total_steps,  ckpt_path, freeze_cnn):
     assert isinstance(envs.single_action_space, gym.spaces.Discrete), "only discrete action space is supported"
 
     agent = PPONetwork(envs).to(device)
+    target_network = PPONetwork(envs).to(device)
     if ckpt_path is not None:
         agent.load_checkpoint(ckpt_path)
     if freeze_cnn:
         agent.freeze_CNN()
 
-    optimizer = optim.Adam(agent.parameters(), lr=args.learning_rate, eps=1e-5)
+    if target_path is not None:
+        target_network.load_checkpoint(target_path)
+        target_network.freeze_CNN()
+        target_network.eval()
+
+    optimizer = optim.AdamW(agent.parameters(), lr=args.learning_rate, eps=1e-5)
 
     # ALGO Logic: Storage setup
     obs = torch.zeros((args.num_steps, args.num_envs) + envs.single_observation_space.shape).to(device)
@@ -156,7 +187,7 @@ def run(args, env_config, pcg, total_steps,  ckpt_path, freeze_cnn):
                 end = start + args.minibatch_size
                 mb_inds = b_inds[start:end]
 
-                _, newlogprob, entropy, newvalue = agent.get_action_and_value(b_obs[mb_inds], b_actions.long()[mb_inds])
+                _, newlogprob, entropy, newvalue, network_encs = agent.get_action_and_value_and_latent(b_obs[mb_inds], b_actions.long()[mb_inds])
                 logratio = newlogprob - b_logprobs[mb_inds]
                 ratio = logratio.exp()
 
@@ -191,7 +222,21 @@ def run(args, env_config, pcg, total_steps,  ckpt_path, freeze_cnn):
                     v_loss = 0.5 * ((newvalue - b_returns[mb_inds]) ** 2).mean()
 
                 entropy_loss = entropy.mean()
-                loss = pg_loss - args.ent_coef * entropy_loss + v_loss * args.vf_coef
+                ppo_loss = pg_loss - args.ent_coef * entropy_loss + v_loss * args.vf_coef
+
+
+                if target_path is not None:
+                    # #KL loss
+
+                    agent_encs = agent.get_latent_encoding(test_dataset)
+                    target_encs = target_network.get_latent_encoding(test_dataset)
+                    # target_encs = target_network.get_latent_encoding(b_obs[mb_inds])
+                    cosine_similarity = nn.functional.cosine_similarity(agent_encs, target_encs, dim=1).mean()
+                    beta = 0.02
+                    cosine_loss = -beta * cosine_similarity
+                    loss = ppo_loss + cosine_loss
+                else:
+                    loss = ppo_loss
 
                 optimizer.zero_grad()
                 loss.backward()
@@ -226,10 +271,19 @@ def run(args, env_config, pcg, total_steps,  ckpt_path, freeze_cnn):
         writer.add_scalar("losses/clipfrac", np.mean(clipfracs), global_step)
         writer.add_scalar("losses/explained_variance", explained_var, global_step)
 
+        if target_path is not None:
+            writer.add_scalar("cos_similarity", cosine_similarity.item(), global_step)
+            writer.add_scalar("losses/cosine_loss", cosine_loss.item(), global_step)
+
+        writer.add_scalar("losses/joint_loss", loss.item(), global_step)
+        writer.add_scalar("losses/ppo_loss", ppo_loss.item(), global_step)
+
+
         writer.add_scalar("charts/SPS", int(global_step / (time.time() - start_time)), global_step)
 
     print(f"Saving checkpoint, global step: {global_step}")
-    agent.save_checkpoint(path=f"weights_{env_config}.ckpt")
+    save_name = [x.split('/')[-1] for x in env_config]
+    agent.save_checkpoint(path=f"weights_{save_name}.ckpt")
     envs.close()
     writer.close()
 
