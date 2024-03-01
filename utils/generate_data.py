@@ -12,6 +12,8 @@ from core.level_generator import generate_levels
 from core.network import PPONetwork
 from pathlib import Path
 
+from core.config_generator import get_background_env_configs, get_mixed_env_configs
+
 def get_random_actions(num_total_actions, env_config):
 
     env = make_env(f"../configs/{env_config}", 0, 0, 0, 0)()
@@ -81,66 +83,40 @@ if __name__ == "__main__":
     np.random.seed(0)
 
     num_random_actions = 200_000
-    # num_agent_actions = 1
 
-    level_strings = generate_levels(7000, 0, 7, 7)
+    game_name = "dwarf"
+    env_configs, _ = get_background_env_configs(template_name=game_name, train=False)
+
+    level_strings = generate_levels(game_name, 50000, 0, 7, 7)
 
     random_actions = get_random_actions(num_random_actions,
-                                        env_config="fully-observable-back/cluster-1-floor.yaml")
+                                        env_config=f"{game_name}.yaml")
 
-    # agent_actions = get_agent_actions(num_agent_actions,
-    #                                   env_config="cluster-1-floor.yaml",
-    #                                   ckpt_path="weights_['cluster-1'].ckpt")
     print("Actions collected")
 
-    experiment_name = "fully-observable-back"
-    env_configs = [
-        # f"{experiment_name}/cluster-1-floor.yaml",
-        # f"{experiment_name}/cluster-2-grass.yaml",
-        # f"{experiment_name}/cluster-3-orange.yaml",
-        # f"{experiment_name}/cluster-4-lbrown.yaml",
-        # f"{experiment_name}/cluster-5-lblue.yaml",
-        # f"{experiment_name}/cluster-6-biege.yaml",
-        # f"{experiment_name}/cluster-7-space.yaml",
-        # f"{experiment_name}/cluster-8-grey.yaml",
-        f"{experiment_name}/cluster-9-red.yaml",
-        f"{experiment_name}/cluster-10-fill.yaml",
-    ]
 
-    print(f"Collecting random observations")
-    all_observations = {}
     for env_config in env_configs:
+        print(f"Collecting random observations")
+        all_observations = {}
         all_observations[env_config] = collect_observations(env_config, random_actions, level_strings=level_strings)
 
-    # print(f"Collecting agent observations")
-    # for env_config in env_configs:
-    #     agent_observations = collect_observations(env_config, agent_actions, level_strings=None)
-    #     all_observations[env_config] = np.concatenate((all_observations[env_config], agent_observations))
+        for key in all_observations.keys():
+            obs = np.moveaxis(all_observations[key][0], 0, -1)
+            plt.imshow(obs)
+            plt.show()
 
-    for key in all_observations.keys():
-        obs = np.moveaxis(all_observations[key][0], 0, -1)
-        plt.imshow(obs)
-        plt.show()
+        print(f"Filtering observations")
+        file_path = f"../datasets/{game_name}_unique_idx.npz"
+        my_file = Path(file_path)
+        if my_file.is_file():
+            unique_idx = np.load(file_path)
+            idx = unique_idx["idx"]
+        else:
+            _, idx = np.unique(all_observations[env_configs[0]], axis=0, return_index=True)
+            np.savez(file_path, idx=idx)
 
-    print(f"Filtering observations")
-    my_file = Path("../datasets/unique_idx.npz")
-    if my_file.is_file():
-        unique_idx = np.load("../datasets/unique_idx.npz")
-        idx = unique_idx["idx"]
-    else:
-        _, idx = np.unique(all_observations[env_configs[0]], axis=0, return_index=True)
-        np.savez("../datasets/unique_idx.npz", idx=idx)
-
-    filtered_observations = {}
-    for env_config in env_configs:
-
-        filtered_observations[env_config] = all_observations[env_config][np.sort(idx)]
-        print(f"Filtered observations for {env_config}, size {len(filtered_observations[env_config])}")
-
-    print(len(filtered_observations[env_config]))
-
-    for env_config in env_configs:
-        np.savez(f"../datasets/{env_config.split('/')[-1]}.npz", filtered_observations[env_config])
-
+        filtered_observations = all_observations[env_config][np.sort(idx)]
+        np.savez(f"../datasets/{env_config.split('/')[-1]}.npz", filtered_observations)
+        print(f"Filtered observations for {env_config}, size {len(filtered_observations)}")
 
 

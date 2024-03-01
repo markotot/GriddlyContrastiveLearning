@@ -5,9 +5,11 @@ from info_nce import InfoNCE
 from matplotlib import pyplot as plt
 from torch import optim
 
+from core.config_generator import get_mixed_env_configs, get_background_env_configs
 from core.network import PPONetwork
 import numpy as np
 import torch
+import torch.nn.functional as F
 from core.environment import make_env
 
 
@@ -56,7 +58,7 @@ def better_plot(observations, losses, plot_name, pairwise=False):
             if n >= len(observations):
                 continue
 
-            if i > 1:
+            if axes.shape[0] > 1:
                 axes[i][j].axis('off')
                 axes[i][j].imshow(observations[n])
                 axes[i][j].set_title(losses[n])
@@ -157,11 +159,12 @@ def test_out_of_distribution(agent, anchor_dataset, test_dataset, shuffled, verb
 
         with torch.no_grad():
             anchor_env_encodings = agent.get_latent_encoding(torch.from_numpy(anchor_dataset[data_idx]).to(device))
-
+            norm_ancor = F.layer_norm(anchor_env_encodings, anchor_env_encodings.shape[1:])
         for ood_data_idx in range(test_dataset.shape[0]):
 
             with torch.no_grad():
                 ood_env_encodings = agent.get_latent_encoding(torch.from_numpy(test_dataset[ood_data_idx]).to(device))
+                norm_ood = F.layer_norm(ood_env_encodings, ood_env_encodings.shape[1:])
             cos_similarities = torch.cosine_similarity(anchor_env_encodings, ood_env_encodings, dim=1).cpu().detach().numpy()
             value_similarities = torch.mean(torch.abs(anchor_env_encodings - ood_env_encodings), dim=1).cpu().detach().numpy()
 
@@ -236,8 +239,9 @@ def train_model(agent, optimizer, loss_fn, batch_size, num_negative, train_datas
 
     losses = []
     shuffled_idxs = np.random.permutation(range(num_samples))
-
+    all_logits = np.zeros(shape=(num_negative + 1,))
     for n in range(num_samples // batch_size):
+        optimizer.zero_grad()
         anchor_obs, positive_obs, negative_obs = create_batch(dataset=train_dataset,
                                                               shuffled_idxs=shuffled_idxs,
                                                               num_envs=num_envs,
@@ -253,13 +257,14 @@ def train_model(agent, optimizer, loss_fn, batch_size, num_negative, train_datas
         negative_encodings = agent.get_latent_encoding(torch.from_numpy(negative_obs).to(device))
         negative_encodings = torch.reshape(negative_encodings, (batch_size, num_negative, 512))
 
-        loss = loss_fn(anchor_encodings, positive_encodings, negative_encodings)
-        optimizer.zero_grad()
+        loss, logits = loss_fn(anchor_encodings, positive_encodings, negative_encodings)
+        all_logits += logits.cpu().detach().numpy().mean(axis=0)
         loss.backward()
         optimizer.step()
         losses.append(loss.cpu().detach().numpy())
 
-    return np.array(losses)
+    avg_logits = all_logits / (num_samples // batch_size)
+    return np.array(losses), avg_logits
 
 
 def test_model(agent, test_dataset, ood_test_dataset, verbose_num, print_details):
@@ -300,7 +305,7 @@ def test_model(agent, test_dataset, ood_test_dataset, verbose_num, print_details
                          )
 
 
-def load_dataset(env_configs, ood_env_configs, train_percentage=0.8):
+def load_dataset(env_configs, ood_env_configs, train_percentage=0.8, max_samples=50_000):
 
     train_env_num = len(env_configs) - len(ood_env_configs)
     test_env_num = len(ood_env_configs)
@@ -316,15 +321,24 @@ def load_dataset(env_configs, ood_env_configs, train_percentage=0.8):
         data_array = npz[npz.files[0]]
 
         if total_samples is None:
-            total_samples = data_array.shape[0]
+            total_samples = min(data_array.shape[0], max_samples)
             dataset = np.zeros(shape=(train_env_num, total_samples, 3, 84, 84), dtype=np.uint8)
             ood_dataset = np.zeros(shape=(test_env_num, total_samples, 3, 84, 84), dtype=np.uint8)
 
         if env_config in ood_env_configs:
-            ood_dataset[ood_dataset_idx] = data_array
+
+            if data_array.shape[0] > max_samples:
+                ood_dataset[ood_dataset_idx] = data_array[:max_samples]
+            else:
+                ood_dataset[ood_dataset_idx] = data_array
+
+                ood_dataset_idx += 1
             ood_dataset_idx += 1
         elif env_config in env_configs:
-            dataset[dataset_idx] = data_array
+            if data_array.shape[0] > max_samples:
+                dataset[dataset_idx] = data_array[:max_samples]
+            else:
+                dataset[dataset_idx] = data_array
             dataset_idx += 1
 
     train_num = int(total_samples * train_percentage)
@@ -354,7 +368,7 @@ def euclidian_contrastive_loss(temperature, anchor_batch, positive_batch, negati
     anchor_broadcasted = anchor_batch.unsqueeze(1).expand(-1, negative_batch.shape[1], -1)
     negative_distances = -torch.norm(negative_batch - anchor_broadcasted, dim=2)
 
-    # Apply softmax along dimension 1
+    # Apply softmax along dimension 1 -- comment: is this correct??
     logits = torch.cat((positive_distances.unsqueeze(1), negative_distances), dim=1)
 
     # Create labels tensor
@@ -369,36 +383,22 @@ def euclidian_contrastive_loss(temperature, anchor_batch, positive_batch, negati
 if __name__ == "__main__":
 
     # Making the training process deterministic
-    np.random.seed(0)
-    torch.manual_seed(0)
+    np.random.seed(1)
+    torch.manual_seed(1)
     torch.backends.cudnn.deterministic = True
     torch.backends.cudnn.benchmark = True
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    ppo_agent_ckpt = None
-    # ppo_agent_ckpt = None
+    # ppo_agent_ckpt = "training/contrastive_cnn_5.ckpt"
+    ppo_agent_ckpt = "contrastive_cnn_983_backup.ckpt"
 
-    # Setup environments
-    all_env_configs = [
-        "cluster-1-floor.yaml",
-        "cluster-2-grass.yaml",
-        "cluster-3-orange.yaml",
-        "cluster-4-lbrown.yaml",
-        "cluster-5-lblue.yaml",
-        "cluster-6-biege.yaml",
-        "cluster-7-space.yaml",
-        "cluster-8-grey.yaml",
-        "cluster-9-red.yaml",
-        "cluster-10-fill.yaml",
-    ]
-
-    ood_env_configs = [
-        "cluster-9-red.yaml",
-    ]
+    # Get the environment configurations
+    game_name = "butterflies"
+    all_env_configs, ood_env_configs = get_background_env_configs(template_name=game_name, train=False)
 
     # Load the data
     train_dataset, test_dataset, ood_train_dataset, ood_test_dataset = load_dataset(all_env_configs,
-                                                                                    ood_env_configs,
+                                                                                    [ood_env_configs],
                                                                                     train_percentage=0.9)
     agent = load_agent_model(ppo_agent_ckpt=ppo_agent_ckpt)
     # Hyperparams
@@ -408,14 +408,14 @@ if __name__ == "__main__":
     encoding_size = 512
 
     optimizer = optim.AdamW(agent.parameters())
-    loss_fn = InfoNCE(negative_mode='paired')  # cosine similarity
+    loss_fn = InfoNCE(temperature=0.01, negative_mode='paired')  # cosine similarity
     # loss_fn = euclidian_contrastive_loss  # negative euclidian distance
 
 
     # Train the model
     for n in range(1, num_epochs + 1):
         start_time = time.perf_counter()
-        loss = train_model(agent,
+        loss, logits = train_model(agent,
                            optimizer=optimizer,
                            loss_fn=loss_fn,
                            batch_size=batch_size,
@@ -426,10 +426,16 @@ if __name__ == "__main__":
         end_time = time.perf_counter()
         print(f"Epoch: {n}\tLoss: {np.mean(loss)}, Time: {end_time - start_time:.2f}")
 
+        print(logits)
+
         # Test the model
-        if n % 5 == 0:
+        if n % 5 == 1:
+            print("-----------TESTING MODEL ----------------")
+            test_model(agent, ood_train_dataset[:, ::10], train_dataset[:, ::10], verbose_num=0, print_details=False)
+            print("-----------EVALUATING MODEL----------------")
             test_model(agent, ood_test_dataset, test_dataset, verbose_num=0, print_details=False)
             torch.save(agent.state_dict(), f"checkpoints/ppo/training/contrastive_cnn_{n}.ckpt")
 
-    test_model(agent, ood_test_dataset, test_dataset, verbose_num=2, print_details=False)
     torch.save(agent.state_dict(), f"checkpoints/ppo/training/contrastive_cnn_{num_epochs}.ckpt")
+    test_model(agent, ood_test_dataset, test_dataset, verbose_num=4, print_details=False)
+

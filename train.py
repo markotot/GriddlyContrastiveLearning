@@ -7,6 +7,7 @@ import torch
 
 import core.runner_ppo
 import core.runner_lstm
+from core.config_generator import get_mixed_env_configs, get_background_env_configs
 
 
 def parse_args():
@@ -39,7 +40,7 @@ def parse_args():
         help="the number of parallel game environments")
     parser.add_argument("--num-steps", type=int, default=128,
         help="the number of steps to run in each environment per policy rollout")
-    parser.add_argument("--anneal-lr", type=lambda x: bool(strtobool(x)), default=False, nargs="?", const=True,
+    parser.add_argument("--anneal-lr", type=lambda x: bool(strtobool(x)), default=True, nargs="?", const=True,
         help="Toggle learning rate annealing for policy and value networks")
     parser.add_argument("--gamma", type=float, default=0.99,
         help="the discount factor gamma")
@@ -72,6 +73,7 @@ def parse_args():
     return args
 
 
+
 if __name__ == "__main__":
     args = parse_args()
 
@@ -81,35 +83,27 @@ if __name__ == "__main__":
     torch.backends.cudnn.deterministic = True
     torch.backends.cudnn.benchmark = True
 
-    experiment_type = "fully-observable-back"
-    env_configs = [
-        f"{experiment_type}/cluster-1-floor",
-        # f"{experiment_type}/cluster-1-floor-doors",
-        # f"{experiment_type}/cluster-1-floor-fence",
-        # f"{experiment_type}/cluster-1-floor-trees",
-        # f"{experiment_type}/cluster-1-floor-food",
+    game_name = "butterflies"
+    use_one_env = True
+    # env_configs, _ = get_mixed_env_configs(template_name=game_name, train=True)
+    env_configs, _ = get_background_env_configs(template_name=game_name, train=True)
+    if use_one_env:
+        env_configs = [env_configs[0]]
 
-        # f"{experiment_type}/cluster-1-floor-necromancer",
-        # f"{experiment_type}/cluster-2-grass",
-        # f"{experiment_type}/cluster-3-orange",
-        # f"{experiment_type}/cluster-4-lbrown",
-        # f"{experiment_type}/cluster-5-lblue",
-        # f"{experiment_type}/cluster-6-biege",
-        # f"{experiment_type}/cluster-7-space",
-        # f"{experiment_type}/cluster-8-grey",
-        # f"{experiment_type}/cluster-9-red",
-        # f"{experiment_type}/cluster-10-fill",
-    ]
+    env_level = 0
     model = "ppo"
     total_steps = 5_000_000
     # load_ckpt_path = None
-    load_ckpt_path = "contrastive_cnn_983.ckpt"
-    target_path = None
+    # freeze_cnn = False
+    load_ckpt_path = "contrastive_cnn_983_backup.ckpt"
     freeze_cnn = True
+    target_path = None
+
     pcg = False
 
     if model == "ppo":
-        core.runner_ppo.run(args, env_configs, pcg=pcg, total_steps=total_steps, ckpt_path=load_ckpt_path, target_path=target_path, freeze_cnn=freeze_cnn)
+        core.runner_ppo.run(args, env_configs, pcg=pcg, total_steps=total_steps, ckpt_path=load_ckpt_path,
+                            target_path=target_path, freeze_cnn=freeze_cnn, env_level=env_level)
     elif model == "lstm":
         core.runner_lstm.run(args, env_configs, pcg=pcg, total_steps=total_steps, ckpt_path=load_ckpt_path, freeze_cnn=freeze_cnn)
 

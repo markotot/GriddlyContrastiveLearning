@@ -6,6 +6,7 @@ from torch.distributions.categorical import Categorical
 
 def layer_init(layer, std=np.sqrt(2), bias_const=0.0):
     torch.nn.init.orthogonal_(layer.weight, std)
+    # torch.nn.init.xavier_uniform_(layer.weight)
     torch.nn.init.constant_(layer.bias, bias_const)
     return layer
 
@@ -44,21 +45,32 @@ class PPONetwork(nn.Module):
     def get_value(self, x):
         return self.critic(self.network(x / 255.0))
 
-    def get_action_and_value(self, x, action=None):
-        hidden = self.network(x / 255.0)
-        logits = self.actor(hidden)
-        probs = Categorical(logits=logits)
-        if action is None:
-            action = probs.sample()
-        return action, probs.log_prob(action), probs.entropy(), self.critic(hidden)
+    def get_action_and_value(self, x, action=None, greedy=False):
 
-    def get_action_and_value_and_latent(self, x, action=None):
+        action, log_probs, entropy, value, _ = self.get_action_and_value_and_latent(x, action, greedy)
+        return action, log_probs, entropy, value
+
+    def get_action_and_value_and_latent(self, x, action=None, greedy=False):
         hidden = self.network(x / 255.0)
         logits = self.actor(hidden)
-        probs = Categorical(logits=logits)
+        value = self.critic(hidden)
         if action is None:
+            action, log_probs, entropy = self.get_action(logits, greedy)
+        else:
+            probs = Categorical(logits=logits)
+            log_probs = probs.log_prob(action)
+            entropy = probs.entropy()
+
+        return action, log_probs, entropy, value, hidden
+
+    def get_action(self, logits, greedy=False):
+        probs = Categorical(logits=logits)
+        if greedy is False:
             action = probs.sample()
-        return action, probs.log_prob(action), probs.entropy(), self.critic(hidden), hidden
+        else:
+            action = torch.argmax(logits, dim=1)
+        return action, probs.log_prob(action), probs.entropy()
+
 
     def get_latent_encoding(self, x):
         return self.network(x / 255.0)

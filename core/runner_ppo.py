@@ -17,7 +17,7 @@ from utils.videos import record_video
 from contrastive_cnn import load_dataset
 
 
-def run(args, env_config, pcg, total_steps,  ckpt_path, target_path, freeze_cnn):
+def run(args, env_config, pcg, total_steps,  ckpt_path, target_path, freeze_cnn, env_level):
 
     run_name = f"{args.env_id}__{args.exp_name}__{args.seed}__{int(time.time())}"
     if args.track:
@@ -46,28 +46,29 @@ def run(args, env_config, pcg, total_steps,  ckpt_path, target_path, freeze_cnn)
 
     device = torch.device("cuda" if torch.cuda.is_available() and args.cuda else "cpu")
 
-    all_env_configs = [
-        "cluster-1-floor.yaml",
-        "cluster-2-grass.yaml",
-        "cluster-3-orange.yaml",
-        "cluster-4-lbrown.yaml",
-        "cluster-5-lblue.yaml",
-        "cluster-6-biege.yaml",
-        "cluster-7-space.yaml",
-        "cluster-8-grey.yaml",
-        "cluster-9-red.yaml",
-        "cluster-10-fill.yaml",
-    ]
+    if target_path is not None:
+        all_env_configs = [
+            "cluster-1-floor.yaml",
+            "cluster-2-grass.yaml",
+            "cluster-3-orange.yaml",
+            "cluster-4-lbrown.yaml",
+            "cluster-5-lblue.yaml",
+            "cluster-6-biege.yaml",
+            "cluster-7-space.yaml",
+            "cluster-8-grey.yaml",
+            "cluster-9-red.yaml",
+            "cluster-10-fill.yaml",
+        ]
 
-    ood_env_configs = [
-        "cluster-9-red.yaml",
-    ]
+        ood_env_configs = [
+            "cluster-9-red.yaml",
+        ]
 
-    # Load the data
-    train_dataset, test_dataset, ood_train_dataset, ood_test_dataset = load_dataset(all_env_configs,
-                                                                                    ood_env_configs,
-                                                                                    train_percentage=0.95)
-    test_dataset = torch.from_numpy(test_dataset.reshape(-1, 3, 84, 84)).to(device)
+        # Load the data
+        train_dataset, test_dataset, ood_train_dataset, ood_test_dataset = load_dataset(all_env_configs,
+                                                                                        ood_env_configs,
+                                                                                        train_percentage=0.95)
+        test_dataset = torch.from_numpy(test_dataset.reshape(-1, 3, 84, 84)).to(device)
 
     # env setup
     if pcg:
@@ -76,7 +77,7 @@ def run(args, env_config, pcg, total_steps,  ckpt_path, target_path, freeze_cnn)
         env_fn = make_env
 
     envs = gym.vector.SyncVectorEnv(
-        [env_fn(f"configs/{env_config[i % len(env_config)]}.yaml", 0, i, args.capture_video, run_name) for
+        [env_fn(f"configs/{env_config[i % len(env_config)]}", 0, i, args.capture_video, run_name, level=env_level) for
          i in range(args.num_envs)]
     )
     assert isinstance(envs.single_action_space, gym.spaces.Discrete), "only discrete action space is supported"
@@ -254,9 +255,12 @@ def run(args, env_config, pcg, total_steps,  ckpt_path, target_path, freeze_cnn)
         if update % 10 == 1:
             print("SPS:", int(global_step / (time.time() - start_time)))
             print(f"Saving checkpoint, global step: {global_step}")
-            save_name = [x.split('/')[-1] for x in env_config]
+            if len(env_config) > 1:
+                save_name = env_config[0].split('/')[-1].split('-')[0] + "_group"
+            else:
+                save_name = [x.split('/')[-1] for x in env_config]
             agent.save_checkpoint(path=f"weights_{save_name}.ckpt")
-
+            print(save_name)
             if args.save_video_episodes > 0:
                 record_video(agent, env_config, args.save_video_episodes, global_step=global_step)
 
@@ -282,19 +286,22 @@ def run(args, env_config, pcg, total_steps,  ckpt_path, target_path, freeze_cnn)
         writer.add_scalar("charts/SPS", int(global_step / (time.time() - start_time)), global_step)
 
     print(f"Saving checkpoint, global step: {global_step}")
-    save_name = [x.split('/')[-1] for x in env_config]
+    if len(env_config) > 1:
+        save_name = env_config[0].split('/')[-1].split('-')[0] + "_group"
+    else:
+        save_name = [x.split('/')[-1] for x in env_config]
     agent.save_checkpoint(path=f"weights_{save_name}.ckpt")
     envs.close()
     writer.close()
 
-def test(env_names, ckpt_path, pcg, total_num_episodes):
+def test(env_names, ckpt_path, pcg, total_num_episodes, env_level):
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     for env_name in env_names:
         if pcg:
-            env = make_pcg_env(f"configs/{env_name}.yaml", 0, 0,0,0)()
+            env = make_pcg_env(f"configs/{env_name}", 0, 0,0,0)()
         else:
-            env = make_env(f"configs/{env_name}.yaml", 0, 0,0,0)()
+            env = make_env(f"configs/{env_name}", 0, 0,0,0, level=env_level)()
 
         env.single_action_space = env.action_space
         agent = PPONetwork(env).to(device)
@@ -315,7 +322,7 @@ def test(env_names, ckpt_path, pcg, total_num_episodes):
         average_episode_reward = []
         while num_episodes < total_num_episodes:
 
-            action, _, _, _ = agent.get_action_and_value(obs.unsqueeze(0))
+            action, _, _, _ = agent.get_action_and_value(obs.unsqueeze(0), greedy=True)
             obs, reward, done, info = env.step(action.cpu().numpy())
             if num_episodes < 10:
                 video_frame = np.rot90(np.moveaxis(obs, 0, -1), 3)
@@ -331,8 +338,8 @@ def test(env_names, ckpt_path, pcg, total_num_episodes):
                 total_reward = 0
                 obs = env.reset()
                 obs = torch.from_numpy(obs).to(device)
-                if num_episodes % 10 == 0:
-                    print("Episode: ", num_episodes)
+                # if num_episodes % 10 == 0:
+                #     print("Episode: ", num_episodes)
 
                 if "episode" in info.keys():
                     average_episode_reward.append(info['episode']['r'])
@@ -342,4 +349,3 @@ def test(env_names, ckpt_path, pcg, total_num_episodes):
         print("\nENV: ", env_name)
         print("Saved video successfully at: ", video_path)
         print("Average episode rewards: ", np.array(average_episode_reward).mean())
-        print("Episode rewards: ", np.array(episode_rewards).mean())

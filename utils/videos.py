@@ -18,7 +18,7 @@ def record_video(agent, env_names, total_num_episodes, global_step):
 
     for env_name in env_names:
 
-        env = make_env(f"configs/{env_name}.yaml", 0, 0,0,0)()
+        env = make_env(f"configs/{env_name}", 0, 0,0,0)()
         env.single_action_space = env.action_space
         obs = env.reset()
 

@@ -62,16 +62,17 @@ if __name__ == '__main__':
     # load data
     all_env_configs = [
         "cluster-1-floor.yaml",
-        "cluster-2-grass-15.yaml",
+        "cluster-2-grass.yaml",
         "cluster-9-red.yaml",
     ]
 
+    # used only to remove cluster-2 from the training set
     ood_env_configs = [
-        "cluster-2-grass-15.yaml",
+        "cluster-2-grass.yaml",
     ]
 
-    ppo_agent_ckpt = "contrastive_cnn.ckpt"
-    # ppo_agent_ckpt = "ppo-standard.ckpt"
+    # ppo_agent_ckpt = "ppo-cnn-983.ckpt"
+    ppo_agent_ckpt = "weights_['cluster-1-floor', 'cluster-2-grass', 'cluster-3-orange', 'cluster-4-lbrown', 'cluster-5-lblue', 'cluster-6-biege', 'cluster-7-space', 'cluster-8-grey'].ckpt"
     # ppo_agent_ckpt = None
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
